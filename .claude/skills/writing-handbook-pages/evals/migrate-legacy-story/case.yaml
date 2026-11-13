@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: migrate-legacy-story
+expected_outcome: |
+  Rewritten with defineMeta in <script module>, a template snippet instead of let:args, tags instead of autodocs, import from one line of @storybook/addon-svelte-csf.

@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: build-test-flag
+expected_outcome: |
+  Explains --test skips docgen and docs and is for CI test builds only, so the published Handbook cannot use it; proposes measured alternatives.

@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: wall-perf-claim
+expected_outcome: |
+  Refuses to report single runs; asks for at least 3 interleaved runs per side on the merge-base build, the up pass and 390 with 4x CPU throttle; flags that one mount per task can multiply style recalculation.

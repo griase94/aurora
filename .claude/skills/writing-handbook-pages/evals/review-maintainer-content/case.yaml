@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: review-maintainer-content
+expected_outcome: |
+  Flags maintainer content outside chapter 13 and asks for the KitTokens block instead of a data story.

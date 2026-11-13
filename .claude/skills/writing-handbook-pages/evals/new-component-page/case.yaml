@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: new-component-page
+expected_outcome: |
+  Story file uses defineMeta only, specimens are stories, data chapters use the <Kit...> blocks, no autodocs tag, props documented by JSDoc in Tag.svelte.
