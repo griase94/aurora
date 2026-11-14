@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 /**
  * The consumer smoke: a fresh project outside the repo installs the packed
- * tarballs the way an app does (scripts/consumer/aurora-pin.mjs: an
- * `@aurora/<name>` key plus a pnpm override per package) and imports every
- * JavaScript entry of every package in Node.
+ * tarballs the way an app does. Its package.json comes from the same `pin()`
+ * that apps run (scripts/consumer/aurora-pin.mjs): only the top-level
+ * packages (the ones no other package depends on) are dependencies, and every
+ * package gets an override, so a sibling that pnpm would otherwise ask the
+ * npm registry for fails the install here first. Then it imports every
+ * JavaScript entry of every installed package in Node.
  *
  *   node scripts/consumer-smoke.mjs <dir-with-tarballs>
  *
@@ -15,6 +18,7 @@ import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { pin } from "./consumer/aurora-pin.mjs";
 import { parseName } from "./lib/packages.mjs";
 
 /**
@@ -42,29 +46,63 @@ export function nodeEntries(exports) {
 }
 
 /**
- * The consumer's package.json for a set of tarballs: one `@aurora/<name>`
- * dependency per package and an override that sends the scoped name (which
- * no registry serves yet) to the same tarball.
- * @param {{ name: string, file: string }[]} tarballs packed name and absolute path
+ * @typedef {{ name: string, version: string, dependencies?: Record<string, string>, peerDependencies?: Record<string, string>, optionalDependencies?: Record<string, string>, exports?: unknown }} PackedManifest
  */
-export function consumerManifest(tarballs) {
-  /** @type {Record<string, string>} */
-  const dependencies = {};
-  /** @type {Record<string, string>} */
-  const overrides = {};
-  for (const t of tarballs) {
-    const parsed = parseName(t.name);
-    if (!parsed) throw new Error(`${t.name} is not @<scope>/aurora-<name>`);
-    dependencies[`@aurora/${parsed.name}`] = `file:${t.file}`;
-    overrides[t.name] = `file:${t.file}`;
-  }
-  return {
-    name: "aurora-consumer-smoke",
-    private: true,
-    type: "module",
-    dependencies,
-    pnpm: { overrides },
-  };
+
+/**
+ * The packages no other packed package depends on: what an app lists.
+ * @param {PackedManifest[]} manifests
+ */
+export function topLevel(manifests) {
+  const used = new Set(
+    manifests.flatMap((m) =>
+      ["dependencies", "peerDependencies", "optionalDependencies"].flatMap(
+        (s) =>
+          Object.keys(
+            /** @type {Record<string, unknown>} */ (
+              m[/** @type {keyof PackedManifest} */ (s)] ?? {}
+            ),
+          ),
+      ),
+    ),
+  );
+  const top = manifests.filter((m) => !used.has(m.name));
+  return top.length ? top : manifests;
+}
+
+/**
+ * The consumer's package.json for a directory of tarballs, written by the
+ * apps' own `pin()`: the top-level packages as `@aurora/<name>` dependencies,
+ * an override for every package.
+ * @param {string} dir absolute directory holding the tarballs
+ * @param {PackedManifest[]} manifests the packed package.json of each tarball
+ */
+export function consumerManifest(dir, manifests) {
+  const parsed = manifests.map((m) => {
+    const p = parseName(m.name);
+    if (!p) throw new Error(`${m.name} is not @<scope>/aurora-<name>`);
+    return { ...p, version: m.version };
+  });
+  const scopes = new Set(parsed.map((p) => p.scope));
+  const versions = new Set(parsed.map((p) => p.version));
+  if (scopes.size !== 1 || versions.size !== 1)
+    throw new Error(
+      `the tarballs disagree on scope or version: ${manifests.map((m) => `${m.name}@${m.version}`).join(", ")}`,
+    );
+  return pin(
+    {
+      name: "aurora-consumer-smoke",
+      private: true,
+      type: "module",
+    },
+    {
+      version: /** @type {string} */ ([...versions][0]),
+      scope: /** @type {string} */ ([...scopes][0]),
+      packages: parsed.map((p) => p.name),
+      add: topLevel(manifests).map((m) => parseName(m.name)?.name ?? ""),
+      base: `file:${dir}`,
+    },
+  );
 }
 
 function main() {
@@ -79,20 +117,19 @@ function main() {
     console.error(`consumer-smoke: no tarballs in ${abs}`);
     process.exit(1);
   }
-  const tarballs = files.map((f) => {
-    const file = join(abs, f);
-    const manifest = JSON.parse(
-      execFileSync("tar", ["-xzOf", file, "package/package.json"], {
+  /** @type {PackedManifest[]} */
+  const manifests = files.map((f) =>
+    JSON.parse(
+      execFileSync("tar", ["-xzOf", join(abs, f), "package/package.json"], {
         encoding: "utf8",
       }),
-    );
-    return { name: String(manifest.name), file, exports: manifest.exports };
-  });
+    ),
+  );
   const app = mkdtempSync(join(tmpdir(), "aurora-consumer-"));
   try {
     writeFileSync(
       join(app, "package.json"),
-      JSON.stringify(consumerManifest(tarballs), null, 2),
+      JSON.stringify(consumerManifest(abs, manifests), null, 2),
     );
     execFileSync(
       "pnpm",
@@ -103,9 +140,9 @@ function main() {
       },
     );
     let imported = 0;
-    for (const t of tarballs) {
-      const key = `@aurora/${parseName(t.name)?.name}`;
-      for (const entry of nodeEntries(t.exports)) {
+    for (const m of topLevel(manifests)) {
+      const key = `@aurora/${parseName(m.name)?.name}`;
+      for (const entry of nodeEntries(m.exports)) {
         const spec = entry === "." ? key : `${key}/${entry.slice(2)}`;
         const code = `const m = await import(${JSON.stringify(spec)}); if (!Object.keys(m).length) throw new Error("no exports"); console.log(${JSON.stringify(spec)} + ": " + Object.keys(m).join(", "));`;
         execFileSync("node", ["--input-type=module", "-e", code], {
