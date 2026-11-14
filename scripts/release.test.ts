@@ -36,6 +36,12 @@ describe("latestTag", () => {
     expect(latestTag(["nightly", "0.3.0"])).toBeNull();
     expect(latestTag([])).toBeNull();
   });
+
+  it("ignores versions with leading zeros", () => {
+    expect(latestTag(["v0.1.0", "v0.2.0", "v00.3.0", "v0.03.0"])).toBe(
+      "v0.2.0",
+    );
+  });
 });
 
 describe("nextVersion", () => {
@@ -98,14 +104,48 @@ describe("plan", () => {
     expect(result).toMatchObject({ release: false });
   });
 
-  it("skips on aurora:skip", () => {
-    const result = plan({
-      tags,
-      head: "bbb",
-      prs: [pr(2, ["aurora:skip"])],
-      packagesChanged: true,
-    });
-    expect(result).toMatchObject({ release: false });
+  it("skips on aurora:skip when nothing under packages/ changed", () => {
+    expect(
+      plan({
+        tags,
+        head: "bbb",
+        prs: [pr(2, ["aurora:skip"])],
+        packagesChanged: false,
+      }),
+    ).toMatchObject({ release: false });
+  });
+
+  it("fails when packages/ changed but no pull request asks for a release", () => {
+    for (const labels of [["aurora:skip"], [], ["bug"]])
+      expect(() =>
+        plan({
+          tags,
+          head: "bbb",
+          prs: [pr(2, labels)],
+          packagesChanged: true,
+        }),
+      ).toThrow(/no merged pull request since then carries.*#2/);
+  });
+
+  it("fails when packages/ changed and no merged pull request was found", () => {
+    expect(() =>
+      plan({ tags, head: "bbb", prs: [], packagesChanged: true }),
+    ).toThrow(/no merged pull request was found/);
+  });
+
+  it("releases at the level given by hand, whatever the labels say", () => {
+    expect(
+      plan({
+        tags,
+        head: "bbb",
+        prs: [],
+        packagesChanged: true,
+        level: "minor",
+      }),
+    ).toMatchObject({ release: true, version: "0.1.0", level: "minor" });
+    expect(() =>
+      plan({ tags, head: "bbb", prs: [], packagesChanged: true, level: "x" }),
+    ).toThrow(/unknown level/);
   });
 
   it("releases the next version and marks 0.0.x as a pre-release", () => {
@@ -175,6 +215,24 @@ describe("section and visibleInApps", () => {
     );
   });
 
+  it("does not end the section at a # inside a code fence", () => {
+    expect(
+      section(
+        "## Changelog\n```sh\n# comment\n```\nafter\n## Tests\nno",
+        "Changelog",
+      ),
+    ).toBe("```sh\n# comment\n```\nafter");
+    expect(
+      section("## Changelog\n~~~\n## not a heading\n~~~\n# Next", "Changelog"),
+    ).toBe("~~~\n## not a heading\n~~~");
+  });
+
+  it("closes a fence the section leaves open", () => {
+    expect(section("## Changelog\n````md\n# x\n```\n", "Changelog")).toBe(
+      "````md\n# x\n```\n````",
+    );
+  });
+
   it("returns an empty string for a missing section", () => {
     expect(section("no headings", "Changelog")).toBe("");
   });
@@ -214,6 +272,13 @@ describe("releaseNotes", () => {
     expect(notes).toContain("Visible in apps: fix");
     expect(notes.match(/Visible in apps/g)).toHaveLength(1);
     expect(notes).not.toContain("Docs only");
+  });
+
+  it("links the pin script and the contract at the tag and shows the app-side command", () => {
+    const at = "https://github.com/someone/aurora/blob/v0.0.2";
+    expect(notes).toContain(`(${at}/scripts/consumer/aurora-pin.mjs)`);
+    expect(notes).toContain(`(${at}/docs/CONSUMING.md)`);
+    expect(notes).toContain("node scripts/aurora-pin.mjs 0.0.2");
   });
 
   it("shows the asset URLs under the neutral key and as the override", () => {

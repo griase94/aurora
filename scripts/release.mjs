@@ -8,8 +8,12 @@
  *       the version after the latest v* tag
  *   release.mjs prs   --head <sha> --repo <owner/repo> --out prs.json
  *       the merged pull requests since the latest tag (GitHub API through gh)
- *   release.mjs plan  --head <sha> --prs prs.json [--allow-1.0]
- *       release=true|false, version, tag, prerelease, reason as key=value lines
+ *   release.mjs plan  --head <sha> --prs prs.json [--allow-1.0] [--level <l>] [--dry-run]
+ *       release=true|false, version, tag, prerelease, reason as key=value lines;
+ *       --level overrides the labels (a release run by hand), --dry-run plans
+ *       as if packages/ had changed (the pull request check of this workflow).
+ *       Exits 1 when packages/ changed but no merged pull request asks for a
+ *       release: that change would otherwise sit unreleased without a sign.
  *   release.mjs apply --version <x.y.z> --repository <owner/repo>
  *       sets version, private:false and repository in every package (runner only)
  *   release.mjs notes --version <x.y.z> --prs prs.json --repository <owner/repo> --out notes.md
@@ -19,7 +23,8 @@
  * Version policy: lockstep (every package under packages/ gets the same
  * version). While the major version is 0, `minor` is the breaking level and
  * `major` is refused unless --allow-1.0 is given. Re-running for a commit that
- * already carries a v* tag is a no-op that exits 0.
+ * already carries a v* tag is a no-op that exits 0. Only `vX.Y.Z` tags without
+ * leading zeros count.
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -33,7 +38,7 @@ import { REPO, listPackages, parseName, tarballName } from "./lib/packages.mjs";
 /** @typedef {{ name: string, sha: string }} Tag */
 
 const LEVELS = /** @type {const} */ (["major", "minor", "patch"]);
-const VERSION = /^v?(\d+)\.(\d+)\.(\d+)$/;
+const VERSION = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
 /** @returns {[number, number, number] | null} */
 export function parseVersion(/** @type {string} */ v) {
@@ -110,11 +115,21 @@ export function highestLevel(prs) {
 }
 
 /**
- * Whether to release, and as which version.
- * @param {{ tags: Tag[], head: string, prs: PullRequest[], packagesChanged: boolean, allow1?: boolean }} input
+ * Whether to release, and as which version. Throws when packages/ changed but
+ * nothing asks for a release (no merged pull request found, or none with a
+ * release label): the workflow fails loudly instead of skipping.
+ * @param {{ tags: Tag[], head: string, prs: PullRequest[], packagesChanged: boolean, allow1?: boolean, level?: string }} input
+ *   level: overrides the labels (a release run by hand)
  * @returns {{ release: false, reason: string } | { release: true, version: string, tag: string, level: Level, prerelease: boolean }}
  */
-export function plan({ tags, head, prs, packagesChanged, allow1 = false }) {
+export function plan({
+  tags,
+  head,
+  prs,
+  packagesChanged,
+  allow1 = false,
+  level: forced,
+}) {
   const atHead = tags.find((t) => t.sha === head && parseVersion(t.name));
   if (atHead)
     return {
@@ -127,14 +142,19 @@ export function plan({ tags, head, prs, packagesChanged, allow1 = false }) {
       release: false,
       reason: `nothing under packages/ changed since ${last}`,
     };
-  const level = highestLevel(prs);
-  if (level === "skip")
-    return {
-      release: false,
-      reason: prs.length
-        ? `no pull request since ${last ?? "the start"} asks for a release (aurora:skip or no label)`
-        : "no merged pull request found for the commits since the last release",
-    };
+  if (forced && !LEVELS.includes(/** @type {Level} */ (forced)))
+    throw new Error(`unknown level "${forced}": use major, minor or patch`);
+  const level = /** @type {Level | "skip"} */ (forced || highestLevel(prs));
+  if (level === "skip") {
+    const since = `packages/ changed since ${last ?? "the start"}`;
+    const fix =
+      "Add the release label to the pull request that changed packages/ and re-run this workflow, or run it by hand with a level.";
+    throw new Error(
+      prs.length
+        ? `${since}, but no merged pull request since then carries aurora:patch, aurora:minor or aurora:major (${prs.map((p) => `#${p.number}`).join(", ")}). ${fix}`
+        : `${since}, but no merged pull request was found for those commits. ${fix}`,
+    );
+  }
   const version = nextVersion(last, level, { allow1 });
   return {
     release: true,
@@ -147,7 +167,9 @@ export function plan({ tags, head, prs, packagesChanged, allow1 = false }) {
 
 /**
  * The text of a `## <heading>` section of a Markdown body, HTML comments
- * (template hints) removed; "" when the section is missing or empty.
+ * (template hints) removed; "" when the section is missing or empty. A `#`
+ * line inside a code fence does not end the section, and a fence still open
+ * at the end is closed.
  */
 export function section(
   /** @type {string} */ body,
@@ -159,8 +181,26 @@ export function section(
   );
   if (start < 0) return "";
   const rest = lines.slice(start + 1);
-  const end = rest.findIndex((l) => /^#{1,2}\s/.test(l));
-  return (end < 0 ? rest : rest.slice(0, end)).join("\n").trim();
+  /** @type {string | null} */
+  let fence = null;
+  let end = rest.length;
+  for (let i = 0; i < rest.length; i++) {
+    const line = /** @type {string} */ (rest[i]);
+    if (fence) {
+      const close = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(line)?.[1];
+      if (close && close[0] === fence[0] && close.length >= fence.length)
+        fence = null;
+      continue;
+    }
+    const open = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (open) fence = open;
+    else if (/^#{1,2}\s/.test(line)) {
+      end = i;
+      break;
+    }
+  }
+  const text = rest.slice(0, end).join("\n").trim();
+  return fence ? `${text}\n${fence}` : text;
 }
 
 /** The "Visible in apps: fix | improvement | none" answer, or null. */
@@ -208,20 +248,23 @@ export function releaseNotes({ version, prs, repository, packages }) {
     deps[`@aurora/${parsed.name}`] = url;
     overrides[name] = url;
   }
+  const atTag = `https://github.com/${repository}/blob/v${version}`;
   out.push(
     "## Install",
     "",
-    "Pin the release assets (or run `scripts/consumer/aurora-pin.mjs " +
-      version +
-      "`, see `docs/CONSUMING.md`):",
+    `With [\`aurora-pin\`](${atTag}/scripts/consumer/aurora-pin.mjs) copied into your app as \`scripts/aurora-pin.mjs\`:`,
+    "",
+    "```sh",
+    `node scripts/aurora-pin.mjs ${version}`,
+    "```",
+    "",
+    "It checks every tarball against `SHA256SUMS`, records the checksums and writes these entries (list only the packages you import; the overrides cover them all):",
     "",
     "```json",
     JSON.stringify({ dependencies: deps, pnpm: { overrides } }, null, 2),
     "```",
     "",
-    "Check the downloads against `SHA256SUMS`; each tarball carries a build provenance attestation (`gh attestation verify <file> --repo " +
-      repository +
-      "`).",
+    `Each tarball carries a build provenance attestation (\`gh attestation verify <file> --repo ${repository}\`). The whole contract: [docs/CONSUMING.md](${atTag}/docs/CONSUMING.md).`,
   );
   return out.join("\n") + "\n";
 }
@@ -322,6 +365,30 @@ function readPrs(file) {
   return JSON.parse(readFileSync(file, "utf8"));
 }
 
+/** Blocks for a few seconds (the GitHub API catches up after a merge). */
+function pause(/** @type {number} */ ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * The merged pull requests of one commit.
+ * @param {string} repo @param {string} sha
+ * @returns {any[]}
+ */
+function mergedPulls(repo, sha) {
+  const json = execFileSync(
+    "gh",
+    [
+      "api",
+      `repos/${repo}/commits/${sha}/pulls`,
+      "--jq",
+      "[.[] | select(.merged_at != null)]",
+    ],
+    { encoding: "utf8" },
+  );
+  return JSON.parse(json || "[]");
+}
+
 /** @param {string[]} args */
 function cmdPrs(args) {
   const head = required(args, "--head");
@@ -335,17 +402,18 @@ function cmdPrs(args) {
   /** @type {Map<number, PullRequest>} */
   const prs = new Map();
   for (const sha of commits) {
-    const json = execFileSync(
-      "gh",
-      [
-        "api",
-        `repos/${repo}/commits/${sha}/pulls`,
-        "--jq",
-        "[.[] | select(.merged_at != null)]",
-      ],
-      { encoding: "utf8" },
-    );
-    for (const pr of JSON.parse(json || "[]"))
+    let pulls = mergedPulls(repo, sha);
+    // Right after a merge the API can map the new commit to no pull request
+    // for a short while: retry the head commit before giving up.
+    for (const wait of sha === head ? [5, 10, 20, 40] : []) {
+      if (pulls.length) break;
+      console.log(
+        `release: no merged pull request for ${sha} yet, retry in ${wait} s`,
+      );
+      pause(wait * 1000);
+      pulls = mergedPulls(repo, sha);
+    }
+    for (const pr of pulls)
       prs.set(pr.number, {
         number: pr.number,
         title: String(pr.title ?? ""),
@@ -371,8 +439,9 @@ function cmdPlan(args) {
     tags,
     head,
     prs: readPrs(required(args, "--prs")),
-    packagesChanged: packagesChangedSince(last),
+    packagesChanged: args.includes("--dry-run") || packagesChangedSince(last),
     allow1: args.includes("--allow-1.0"),
+    level: flag(args, "--level") || undefined,
   });
   const lines = result.release
     ? [
@@ -454,7 +523,12 @@ function main() {
   try {
     fn(args);
   } catch (e) {
-    console.error(`release: ${/** @type {Error} */ (e).message}`);
+    const message = /** @type {Error} */ (e).message;
+    console.error(
+      process.env["GITHUB_ACTIONS"] === "true"
+        ? `::error title=release::${message.replace(/%/g, "%25").replace(/\r?\n/g, "%0A")}`
+        : `release: ${message}`,
+    );
     process.exit(1);
   }
 }
