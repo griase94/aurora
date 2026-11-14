@@ -2,7 +2,7 @@ import js from "@eslint/js";
 import ts from "typescript-eslint";
 import globals from "globals";
 
-// Minimal flat config for the scripts and the canary. The kit import (lane S1)
+// Minimal flat config for the scripts and the canary. The kit import
 // extends it with the Svelte rules and the kit boundaries.
 export default ts.config(
   {
