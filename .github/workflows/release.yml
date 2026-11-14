@@ -12,9 +12,11 @@
 #    artifact against its SHA256SUMS, attests it and creates the GitHub release
 #    (and with it the tag). Only this job can write or sign.
 #
-# Re-running for a commit that already carries a v* tag is a no-op. By hand
-# (Actions > Release > Run workflow): `level` releases main's head when a
-# label was missing; `npm_tag` publishes an existing release to npm only.
+# Re-running for a commit that already carries a v* tag, or for one that is
+# not after the latest release, is a no-op. By hand (Actions > Release > Run
+# workflow, from main only: every job refuses another ref): `level` releases
+# main's head when a label was missing; `npm_tag` publishes an existing
+# release to npm only.
 name: Release
 
 on:
@@ -42,7 +44,9 @@ concurrency:
 jobs:
   build:
     name: build
-    if: github.event_name == 'push' || inputs.npm_tag == ''
+    # Only main releases: "Use workflow from" in the Actions UI accepts any
+    # branch or tag, and a run from one must not tag or attest anything.
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.npm_tag == '')
     uses: ./.github/workflows/release-build.yml
     permissions:
       contents: read
@@ -80,8 +84,18 @@ jobs:
           TAG: ${{ needs.build.outputs.tag }}
           PRERELEASE: ${{ needs.build.outputs.prerelease }}
         run: |
-          if gh release view "$TAG" --repo "$REPO" > /dev/null 2>&1; then
-            echo "::notice title=release::$TAG exists already; nothing to create"
+          # A release that exists already counts only when it is published and
+          # its assets match its own SHA256SUMS. A draft (left behind by a
+          # failed upload) fails the run: `gh release view` also finds drafts.
+          if draft=$(gh release view "$TAG" --repo "$REPO" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$draft" != "false" ]; then
+              echo "::error title=release::$TAG exists as a draft, so it was never published. Delete the draft (gh release delete $TAG --repo $REPO --yes) and re-run this workflow."
+              exit 1
+            fi
+            mkdir published
+            gh release download "$TAG" --repo "$REPO" --dir published --pattern '*.tgz' --pattern SHA256SUMS
+            (cd published && sha256sum -c SHA256SUMS)
+            echo "::notice title=release::$TAG is published already and its assets match its SHA256SUMS; nothing to create"
             exit 0
           fi
           flags=()
@@ -101,7 +115,7 @@ jobs:
     name: npm publish
     needs: [build, publish]
     if: >-
-      !cancelled() && vars.NPM_PUBLISH == 'true' &&
+      !cancelled() && github.ref == 'refs/heads/main' && vars.NPM_PUBLISH == 'true' &&
       (needs.publish.result == 'success' ||
        (github.event_name == 'workflow_dispatch' && inputs.npm_tag != ''))
     runs-on: ubuntu-latest

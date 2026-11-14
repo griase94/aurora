@@ -58,6 +58,16 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
 
+      - name: The head is on main
+        if: ${{ !inputs.dry_run }}
+        env:
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if ! git merge-base --is-ancestor "$HEAD_SHA" origin/main; then
+            echo "::error title=release::$HEAD_SHA is not on main; only main releases"
+            exit 1
+          fi
+
       - name: Merged pull requests since the last release
         if: ${{ !inputs.dry_run }}
         env:

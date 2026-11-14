@@ -117,8 +117,13 @@ export function highestLevel(prs) {
 /**
  * Whether to release, and as which version. Throws when packages/ changed but
  * nothing asks for a release (no merged pull request found, or none with a
- * release label): the workflow fails loudly instead of skipping.
- * @param {{ tags: Tag[], head: string, prs: PullRequest[], packagesChanged: boolean, allow1?: boolean, level?: string }} input
+ * release label): the workflow fails loudly instead of skipping. A head that
+ * does not descend from the latest release (an older commit, a stale re-run)
+ * releases nothing, whatever the level: a newer version must not be built
+ * from older code.
+ * @param {{ tags: Tag[], head: string, prs: PullRequest[], packagesChanged: boolean, headAfterLast?: boolean, allow1?: boolean, level?: string }} input
+ *   headAfterLast: the latest release tag is an ancestor of head (true when
+ *   there is no release yet);
  *   level: overrides the labels (a release run by hand)
  * @returns {{ release: false, reason: string } | { release: true, version: string, tag: string, level: Level, prerelease: boolean }}
  */
@@ -127,6 +132,7 @@ export function plan({
   head,
   prs,
   packagesChanged,
+  headAfterLast = true,
   allow1 = false,
   level: forced,
 }) {
@@ -137,6 +143,11 @@ export function plan({
       reason: `${head} is already released as ${atHead.name}`,
     };
   const last = latestTag(tags.map((t) => t.name));
+  if (last && !headAfterLast)
+    return {
+      release: false,
+      reason: `head ${head} is not after ${last}`,
+    };
   if (!packagesChanged)
     return {
       release: false,
@@ -349,14 +360,25 @@ function readTags() {
     });
 }
 
-/** @param {string | null} last */
-function packagesChangedSince(last) {
+/** @param {string | null} last @param {string} head */
+function packagesChangedSince(last, head) {
   if (!last) return true;
   try {
-    git("diff", "--quiet", last, "HEAD", "--", "packages/");
+    git("diff", "--quiet", last, head, "--", "packages/");
     return false;
   } catch {
     return true;
+  }
+}
+
+/** Whether the tag `last` is an ancestor of `head` (true without a tag). */
+function isAfter(/** @type {string | null} */ last, /** @type {string} */ head) {
+  if (!last) return true;
+  try {
+    git("merge-base", "--is-ancestor", last, head);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -439,7 +461,9 @@ function cmdPlan(args) {
     tags,
     head,
     prs: readPrs(required(args, "--prs")),
-    packagesChanged: args.includes("--dry-run") || packagesChangedSince(last),
+    packagesChanged:
+      args.includes("--dry-run") || packagesChangedSince(last, head),
+    headAfterLast: isAfter(last, head),
     allow1: args.includes("--allow-1.0"),
     level: flag(args, "--level") || undefined,
   });

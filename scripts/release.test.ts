@@ -127,6 +127,24 @@ describe("plan", () => {
       ).toThrow(/no merged pull request since then carries.*#2/);
   });
 
+  it("releases nothing for a head that is not after the latest release, even at a level given by hand", () => {
+    const older = [
+      { name: "v0.0.1", sha: "aaa" },
+      { name: "v0.0.2", sha: "ccc" },
+    ];
+    for (const level of [undefined, "patch"])
+      expect(
+        plan({
+          tags: older,
+          head: "bbb",
+          prs: [],
+          packagesChanged: true,
+          headAfterLast: false,
+          level,
+        }),
+      ).toEqual({ release: false, reason: "head bbb is not after v0.0.2" });
+  });
+
   it("fails when packages/ changed and no merged pull request was found", () => {
     expect(() =>
       plan({ tags, head: "bbb", prs: [], packagesChanged: true }),
