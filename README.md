@@ -9,35 +9,24 @@ agents alike. Brands are data: an app brings its logo and colours, Aurora brings
 pipeline proofs that exercise CI and the release workflow; they contain no kit code. APIs may change
 in any `0.x` minor release.
 
-- [Aurora Atlas](https://aurora-atlas-delta.vercel.app): every component, live, in Light and Dark.
-- [The Handbook](https://aurora-atlas-delta.vercel.app/handbook/): when to use what, and how.
+Aurora Atlas (every component, live, in Light and Dark) and the Handbook (when to use what, and
+how) move here with the kit; their public link follows once they are built from this repository.
 
 ## Using Aurora in an app
 
 Every merged change to a package produces a [release](../../releases) with the packed tarballs,
-`SHA256SUMS` and a build provenance attestation. Until the packages are on npm, an app pins the
-release assets by URL and imports them under a neutral name:
+`SHA256SUMS` and a build provenance attestation. Until the packages are on npm, an app (pnpm 10 or
+newer) pins the release assets by URL and imports them under a neutral name, `@aurora/<name>`. One
+command does it, checks every tarball against `SHA256SUMS` and records the checksums:
 
-```json
-{
-  "dependencies": {
-    "@aurora/svelte": "https://github.com/<owner>/aurora/releases/download/v0.1.0/griase94-aurora-svelte-0.1.0.tgz",
-    "@aurora/tokens": "https://github.com/<owner>/aurora/releases/download/v0.1.0/griase94-aurora-tokens-0.1.0.tgz"
-  },
-  "pnpm": {
-    "overrides": {
-      "@griase94/aurora-svelte": "https://github.com/<owner>/aurora/releases/download/v0.1.0/griase94-aurora-svelte-0.1.0.tgz",
-      "@griase94/aurora-tokens": "https://github.com/<owner>/aurora/releases/download/v0.1.0/griase94-aurora-tokens-0.1.0.tgz"
-    }
-  }
-}
+```sh
+node scripts/aurora-pin.mjs 0.1.0 --owner <owner> --add svelte
 ```
 
-`<owner>` is the account that owns this repository. You do not write this by hand:
-[`scripts/consumer/aurora-pin.mjs`](scripts/consumer/aurora-pin.mjs) pins one version in one
-command, and `--registry npm` switches to npm packages once they are published. The whole contract
-(why the override, integrity, bumps, local development against a checkout) is in
-[docs/CONSUMING.md](docs/CONSUMING.md).
+`<owner>` is the account that owns this repository; copy
+[`scripts/consumer/aurora-pin.mjs`](scripts/consumer/aurora-pin.mjs) into the app first. The whole
+contract (what it writes and why, integrity, bumps, npm later, local development against a checkout)
+is in [docs/CONSUMING.md](docs/CONSUMING.md).
 
 ## Working on Aurora
 
@@ -46,6 +35,10 @@ pnpm install
 pnpm lint && pnpm check && pnpm test:fast
 pnpm aurora:pack        # build, pack and check every package as a consumer gets it
 ```
+
+To try the packed packages in a throwaway project, keep the tarballs and run the consumer smoke on
+them: `pnpm aurora:pack --out .pack && node scripts/consumer-smoke.mjs .pack` (`*.tgz` is ignored by
+git).
 
 Labels, the version policy and the rules for pull requests are in [CONTRIBUTING.md](CONTRIBUTING.md);
 agents start at [AGENTS.md](AGENTS.md).

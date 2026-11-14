@@ -19,6 +19,9 @@ pnpm test:fast       # unit tests: no network, no database, no browser
 pnpm aurora:pack     # build, pack, publint and attw for every package
 ```
 
+To install the packed packages in a throwaway project the way an app does, keep the tarballs:
+`pnpm aurora:pack --out .pack && node scripts/consumer-smoke.mjs .pack` (`*.tgz` is ignored by git).
+
 Run what your change touches while you work; run `pnpm lint` before every push. Prettier never
 formats `.svelte` files: keep their indentation (tabs) as it is.
 
@@ -37,8 +40,8 @@ formats `.svelte` files: keep their indentation (tabs) as it is.
 
   A change under `packages/` always releases, so `aurora:skip` is refused there.
 
-- **Merging**: a pull request merges when an independent reviewer has reviewed it fully with no open
-  blocker, and the required check `ci-ok` is green on its final commit. The merge releases by itself
+- **Merging**: a pull request merges when an independent reviewer has reviewed it fully with no
+  blocker and no major open, and the required check `ci-ok` is green on its final commit. The merge releases by itself
   (see `.github/workflows/release.yml`); nothing is committed back to `main`.
 - A component change updates its Handbook page and its Atlas specimen in the same pull request.
 

@@ -17,7 +17,7 @@ body:
     id: layer
     attributes:
       label: Layer
-      description: Where it belongs (DESIGN.md, Layers).
+      description: Where it belongs. Core serves any app, Brand is decided by a theme, Product is one app's composition.
       options:
         - Core (any app)
         - Brand (a theme decides it)
