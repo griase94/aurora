@@ -1,0 +1,35 @@
+{
+  "name": "aurora",
+  "private": true,
+  "type": "module",
+  "description": "Aurora, a Svelte 5 design system: the workspace root.",
+  "license": "AGPL-3.0-only",
+  "engines": {
+    "node": "24.x",
+    "pnpm": ">=10.0.0 <11"
+  },
+  "packageManager": "pnpm@10.11.1",
+  "scripts": {
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "check": "tsc -p tsconfig.json && pnpm -r --if-present check",
+    "test:fast": "vitest run",
+    "test:watch": "vitest",
+    "aurora:pack": "node scripts/pack.mjs",
+    "scope:check": "vitest run scripts/check-scope.test.ts",
+    "scope:set": "node scripts/set-scope.mjs",
+    "release": "node scripts/release.mjs"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.9.0",
+    "eslint": "^10.4.0",
+    "globals": "^17.6.0",
+    "prettier": "^3.8.3",
+    "publint": "0.3.25",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.59.3",
+    "vitest": "^4.1.6"
+  }
+}

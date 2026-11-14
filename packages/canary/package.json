@@ -1,0 +1,35 @@
+{
+  "name": "@griase94/aurora-canary",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A throwaway package that proves Aurora's CI and release pipeline. It is removed when the kit packages arrive.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc -p tsconfig.json"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2"
+  }
+}

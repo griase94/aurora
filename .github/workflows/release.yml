@@ -1,0 +1,185 @@
+# Every merge to main that changes a package releases a version, without a
+# human step. The merged pull request's label sets the level
+# (aurora:major|minor|patch); changes outside packages/ release nothing, and a
+# package change that no merged pull request labels fails this run loudly.
+# The version, `private: false` and the repository field are set in the
+# runner only and never committed back to main.
+#
+# Two halves:
+#  - `build` (release-build.yml) plans, installs, builds, packs and runs the
+#    consumer smoke with a read-only token and no OIDC token;
+#  - `publish` runs no repository code and installs nothing: it checks the
+#    artifact against its SHA256SUMS, attests it and creates the GitHub release
+#    (and with it the tag). Only this job can write or sign.
+#
+# Re-running for a commit that already carries a v* tag, or for one that is
+# not after the latest release, is a no-op. By hand (Actions > Release > Run
+# workflow, from main only: every job refuses another ref): `level` releases
+# main's head when a label was missing; `npm_tag` publishes an existing
+# release to npm only.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      level:
+        description: Release main's head at this level instead of the labels' level.
+        type: choice
+        options: [labels, patch, minor, major]
+        default: labels
+      npm_tag:
+        description: Only publish this existing release (vX.Y.Z) to npm.
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build
+    # Only main releases: "Use workflow from" in the Actions UI accepts any
+    # branch or tag, and a run from one must not tag or attest anything.
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.npm_tag == '')
+    uses: ./.github/workflows/release-build.yml
+    permissions:
+      contents: read
+      pull-requests: read
+    with:
+      level: ${{ github.event_name == 'workflow_dispatch' && inputs.level != 'labels' && inputs.level || '' }}
+
+  publish:
+    name: publish
+    needs: build
+    if: needs.build.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the tag and the GitHub release
+      id-token: write # sign the provenance attestation
+      attestations: write # store the provenance attestation
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release
+          path: release
+      - name: Check the artifact against its SHA256SUMS
+        working-directory: release/assets
+        run: sha256sum -c SHA256SUMS
+      - name: Provenance attestation
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release/assets/*.tgz
+      - name: GitHub release (creates the tag on this commit)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.sha }}
+          TAG: ${{ needs.build.outputs.tag }}
+          PRERELEASE: ${{ needs.build.outputs.prerelease }}
+        run: |
+          # A release that exists already counts only when it is published and
+          # its assets match its own SHA256SUMS. A draft (left behind by a
+          # failed upload) fails the run: `gh release view` also finds drafts.
+          if draft=$(gh release view "$TAG" --repo "$REPO" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$draft" != "false" ]; then
+              echo "::error title=release::$TAG exists as a draft, so it was never published. Delete the draft (gh release delete $TAG --repo $REPO --yes) and re-run this workflow."
+              exit 1
+            fi
+            mkdir published
+            gh release download "$TAG" --repo "$REPO" --dir published --pattern '*.tgz' --pattern SHA256SUMS
+            (cd published && sha256sum -c SHA256SUMS)
+            echo "::notice title=release::$TAG is published already and its assets match its SHA256SUMS; nothing to create"
+            exit 0
+          fi
+          flags=()
+          if [ "$PRERELEASE" = "true" ]; then flags=(--prerelease); fi
+          gh release create "$TAG" --repo "$REPO" --target "$HEAD_SHA" --title "$TAG" \
+            --notes-file release/notes.md "${flags[@]}" \
+            release/assets/*.tgz release/assets/SHA256SUMS
+          echo "Released [$TAG](https://github.com/$REPO/releases/tag/$TAG)" >> "$GITHUB_STEP_SUMMARY"
+
+  # Off until the npm scope exists: set the repository variable NPM_PUBLISH to
+  # "true" and the secret NPM_TOKEN in the `npm` environment; after the first
+  # publish, bind npm trusted publishing to this workflow and the `npm`
+  # environment and delete the token. It takes the tarballs from the GitHub
+  # release (checked against its SHA256SUMS), so a version can be published
+  # later by hand with `npm_tag`.
+  npm:
+    name: npm publish
+    needs: [build, publish]
+    if: >-
+      !cancelled() && github.ref == 'refs/heads/main' && vars.NPM_PUBLISH == 'true' &&
+      (needs.publish.result == 'success' ||
+       (github.event_name == 'workflow_dispatch' && inputs.npm_tag != ''))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - name: Download the release and check it against SHA256SUMS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.build.outputs.tag || inputs.npm_tag }}
+        run: |
+          if ! [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error title=npm::not a release tag: '$TAG'"
+            exit 1
+          fi
+          mkdir release
+          gh release download "$TAG" --repo "$REPO" --dir release --pattern '*.tgz' --pattern SHA256SUMS
+          (cd release && sha256sum -c SHA256SUMS)
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Publish with provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for f in release/*.tgz; do
+            npm publish "$f" --provenance --access public --ignore-scripts
+          done
+
+  # Tells consumer repos about a release (repository_dispatch, event
+  # `aurora-released`). Runs only when the repository variable
+  # AURORA_CONSUMERS (owner/repo, separated by spaces or new lines) is set,
+  # and sends only when the secret CONSUMERS_TOKEN exists. The list is never a
+  # tracked file: this repo is public and must not name private repos.
+  dispatch:
+    name: tell consumers
+    needs: [build, publish]
+    if: needs.publish.result == 'success' && vars.AURORA_CONSUMERS != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    env:
+      HAS_TOKEN: ${{ secrets.CONSUMERS_TOKEN != '' }}
+    steps:
+      - name: No token
+        if: env.HAS_TOKEN != 'true'
+        run: echo "::warning::AURORA_CONSUMERS is set but the CONSUMERS_TOKEN secret is not, so no consumer is told."
+      - name: Dispatch aurora-released
+        if: env.HAS_TOKEN == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.CONSUMERS_TOKEN }}
+          CONSUMERS: ${{ vars.AURORA_CONSUMERS }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          for repo in $CONSUMERS; do
+            if ! [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+              echo "::warning::skipping '$repo': not owner/repo"
+              continue
+            fi
+            gh api "repos/$repo/dispatches" -f event_type=aurora-released -f "client_payload[version]=$VERSION"
+            echo "told $repo"
+          done

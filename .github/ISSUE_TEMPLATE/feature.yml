@@ -1,0 +1,28 @@
+name: Feature
+description: An improvement to something Aurora already has (an API, a token, docs, tooling).
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: What you want to do
+      description: The task you are trying to get done, not only the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: The change you suggest, with an API sketch where it helps.
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do today instead
+  - type: dropdown
+    id: breaking
+    attributes:
+      label: Breaking for apps?
+      options:
+        - "No"
+        - "Yes"
+        - Not sure

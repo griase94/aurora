@@ -1,0 +1,177 @@
+# The unprivileged half of a release: plan, install, set the version, build,
+# pack, checksums, notes and the consumer smoke, with a read-only token and no
+# OIDC token, so no dependency that runs here can sign or publish anything.
+# The result is one artifact (`release`: assets/*.tgz, assets/SHA256SUMS,
+# notes.md).
+#
+# Callers: release.yml on main (then a job that runs no repository code
+# attests and publishes the artifact), and ci.yml with `dry_run` on pull
+# requests that change the release path, so these steps run before a merge.
+name: Release build
+
+on:
+  workflow_call:
+    inputs:
+      dry_run:
+        description: Plan against a synthetic labelled pull request, as if packages/ had changed. Never published.
+        type: boolean
+        default: false
+      level:
+        description: A level (patch, minor, major) that overrides the labels; empty uses the labels.
+        type: string
+        default: ""
+    outputs:
+      release:
+        description: '"true" when there is something to release'
+        value: ${{ jobs.build.outputs.release }}
+      version:
+        value: ${{ jobs.build.outputs.version }}
+      tag:
+        value: ${{ jobs.build.outputs.tag }}
+      prerelease:
+        value: ${{ jobs.build.outputs.prerelease }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read # the merged pull requests and their labels
+    outputs:
+      release: ${{ steps.plan.outputs.release }}
+      version: ${{ steps.plan.outputs.release == 'true' && steps.plan.outputs.version || '' }}
+      tag: ${{ steps.plan.outputs.release == 'true' && steps.plan.outputs.tag || '' }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: The head is on main
+        if: ${{ !inputs.dry_run }}
+        env:
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if ! git merge-base --is-ancestor "$HEAD_SHA" origin/main; then
+            echo "::error title=release::$HEAD_SHA is not on main; only main releases"
+            exit 1
+          fi
+
+      - name: Merged pull requests since the last release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.sha }}
+        run: node scripts/release.mjs prs --head "$HEAD_SHA" --repo "$REPO" --out "$RUNNER_TEMP/prs.json"
+
+      - name: A synthetic pull request (dry run)
+        if: inputs.dry_run
+        run: |
+          cat > "$RUNNER_TEMP/prs.json" <<'JSON'
+          [
+            {
+              "number": 0,
+              "title": "Dry run of the release workflow",
+              "body": "## Changelog\n\nA dry run.\n\n```sh\n# a heading-like line inside a fence\n```\n\nVisible in apps: none\n\n## Not checked by CI\n\nNothing.",
+              "labels": ["aurora:patch"]
+            }
+          ]
+          JSON
+
+      - name: Plan
+        id: plan
+        env:
+          HEAD_SHA: ${{ github.sha }}
+          ALLOW_1_0: ${{ vars.AURORA_ALLOW_1_0 }}
+          LEVEL: ${{ inputs.level }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          flags=()
+          if [ "$ALLOW_1_0" = "true" ]; then flags+=(--allow-1.0); fi
+          if [ -n "$LEVEL" ]; then flags+=(--level "$LEVEL"); fi
+          if [ "$DRY_RUN" = "true" ]; then flags+=(--dry-run); fi
+          node scripts/release.mjs plan --head "$HEAD_SHA" --prs "$RUNNER_TEMP/prs.json" "${flags[@]}" > "$RUNNER_TEMP/plan.txt"
+          cat "$RUNNER_TEMP/plan.txt"
+          # Only well-formed lines reach the step outputs.
+          grep -E '^(release=(true|false)|version=(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)|tag=v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)|level=(major|minor|patch)|prerelease=(true|false)|reason=.*)$' "$RUNNER_TEMP/plan.txt" >> "$GITHUB_OUTPUT"
+
+      - name: Check the plan
+        env:
+          RELEASE: ${{ steps.plan.outputs.release }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          case "$RELEASE" in
+            true)
+              if [ -z "$VERSION" ] || [ "$TAG" != "v$VERSION" ]; then
+                echo "::error title=release::plan said release=true without a matching version and tag ('$VERSION', '$TAG')"
+                exit 1
+              fi ;;
+            false)
+              if [ "$DRY_RUN" = "true" ]; then
+                echo "::error title=release::the dry run planned no release"
+                exit 1
+              fi ;;
+            *)
+              echo "::error title=release::plan wrote no release= line"
+              exit 1 ;;
+          esac
+
+      - name: Nothing to release
+        if: steps.plan.outputs.release != 'true'
+        env:
+          REASON: ${{ steps.plan.outputs.reason }}
+        run: |
+          echo "No release: $REASON" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Install
+        if: steps.plan.outputs.release == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Set the version in the runner
+        if: steps.plan.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: node scripts/release.mjs apply --version "$VERSION" --repository "$REPO"
+
+      - name: Build, pack, publint, attw
+        if: steps.plan.outputs.release == 'true'
+        run: pnpm aurora:pack --out "$RUNNER_TEMP/release/assets"
+
+      - name: Checksums and notes
+        if: steps.plan.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          node scripts/release.mjs sums --dir "$RUNNER_TEMP/release/assets"
+          node scripts/release.mjs notes --version "$VERSION" --prs "$RUNNER_TEMP/prs.json" --repository "$REPO" --out "$RUNNER_TEMP/release/notes.md"
+          cat "$RUNNER_TEMP/release/assets/SHA256SUMS"
+          { echo "## Release notes ($VERSION)"; echo; cat "$RUNNER_TEMP/release/notes.md"; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Consumer smoke on the release tarballs
+        if: steps.plan.outputs.release == 'true'
+        run: node scripts/consumer-smoke.mjs "$RUNNER_TEMP/release/assets"
+
+      - name: Keep the release for the publish job
+        if: steps.plan.outputs.release == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release
+          path: ${{ runner.temp }}/release
+          retention-days: 7
+          if-no-files-found: error

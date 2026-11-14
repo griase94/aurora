@@ -1,0 +1,34 @@
+# Security updates for the npm dependencies and weekly, grouped updates for
+# the SHA-pinned actions. Dependabot security updates must also be switched on
+# in the repository settings.
+#
+# Labels satisfy the release-label rule: actions change no package
+# (aurora:skip); an npm security update may touch a package's dependencies, and
+# aurora:patch is valid with or without package changes (a release happens
+# only when something under packages/ changed).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    labels: ["aurora:skip"]
+    commit-message:
+      prefix: "ci"
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # 0 turns version updates off and keeps security updates on.
+    open-pull-requests-limit: 0
+    groups:
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+    labels: ["aurora:patch"]
+    commit-message:
+      prefix: "deps"
