@@ -174,7 +174,7 @@ export function visibleInApps(/** @type {string} */ body) {
 /**
  * The GitHub release notes.
  * @param {{ version: string, prs: PullRequest[], repository: string, packages: string[] }} input
- *   packages: the package names (`@scope/aurora-name`)
+ *   packages: the package names (`@<scope>/aurora-<name>`)
  */
 export function releaseNotes({ version, prs, repository, packages }) {
   const out = [];

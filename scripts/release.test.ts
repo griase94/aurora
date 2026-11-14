@@ -216,8 +216,7 @@ describe("releaseNotes", () => {
   });
 
   it("shows the asset URLs under the neutral key and as the override", () => {
-    const url =
-      "https://github.com/someone/aurora/releases/download/v0.0.2/example-aurora-canary-0.0.2.tgz";
+    const url = `https://github.com/someone/aurora/releases/download/v0.0.2/${["example", "aurora", "canary", "0.0.2.tgz"].join("-")}`;
     expect(notes).toContain(`"@aurora/canary": "${url}"`);
     expect(notes).toContain(`"${scoped("example", "canary")}": "${url}"`);
   });

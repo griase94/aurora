@@ -35,7 +35,7 @@ export function listPackages(root = REPO) {
     });
 }
 
-/** `@scope/aurora-name` → `{ scope, name }`, or null for any other name. */
+/** `@<scope>/aurora-<name>` → `{ scope, name }`, or null for any other name. */
 export function parseName(/** @type {string} */ full) {
   const m = /^@([a-z0-9][a-z0-9._-]*)\/aurora-([a-z0-9][a-z0-9-]*)$/.exec(full);
   return m
