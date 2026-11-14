@@ -1,0 +1,9 @@
+node_modules/
+dist/
+build/
+.svelte-kit/
+coverage/
+pnpm-lock.yaml
+LICENSE
+# Svelte files keep their own indentation (tabs); prettier never formats them.
+*.svelte

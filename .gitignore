@@ -1,0 +1,28 @@
+node_modules
+
+# Build and pack output
+dist/
+*.tgz
+SHA256SUMS
+release-notes.md
+.svelte-kit/
+/build
+
+# Test artifacts
+/coverage
+/playwright-report
+/test-results
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Agent tooling: keep the shared rules and skills, nothing else
+**/.claude/*
+!/.claude/rules/
+!/.claude/skills/
