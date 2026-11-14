@@ -44,7 +44,11 @@ const planAt = (head: string, ...flags: string[]) =>
       "prs.json",
       ...flags,
     ],
-    { cwd: repo, encoding: "utf8", env: { ...process.env, GITHUB_ACTIONS: "" } },
+    {
+      cwd: repo,
+      encoding: "utf8",
+      env: { ...process.env, GITHUB_ACTIONS: "" },
+    },
   );
 
 beforeAll(() => {

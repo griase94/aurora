@@ -19,7 +19,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pin } from "./consumer/aurora-pin.mjs";
-import { parseName } from "./lib/packages.mjs";
+import { parseName, topLevel } from "./lib/packages.mjs";
+
+export { topLevel };
 
 /**
  * The subpaths of an exports map that Node can import without a bundler.
@@ -48,27 +50,6 @@ export function nodeEntries(exports) {
 /**
  * @typedef {{ name: string, version: string, dependencies?: Record<string, string>, peerDependencies?: Record<string, string>, optionalDependencies?: Record<string, string>, exports?: unknown }} PackedManifest
  */
-
-/**
- * The packages no other packed package depends on: what an app lists.
- * @param {PackedManifest[]} manifests
- */
-export function topLevel(manifests) {
-  const used = new Set(
-    manifests.flatMap((m) =>
-      ["dependencies", "peerDependencies", "optionalDependencies"].flatMap(
-        (s) =>
-          Object.keys(
-            /** @type {Record<string, unknown>} */ (
-              m[/** @type {keyof PackedManifest} */ (s)] ?? {}
-            ),
-          ),
-      ),
-    ),
-  );
-  const top = manifests.filter((m) => !used.has(m.name));
-  return top.length ? top : manifests;
-}
 
 /**
  * The consumer's package.json for a directory of tarballs, written by the

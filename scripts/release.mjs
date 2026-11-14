@@ -31,7 +31,13 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { REPO, listPackages, parseName, tarballName } from "./lib/packages.mjs";
+import {
+  REPO,
+  listPackages,
+  parseName,
+  tarballName,
+  topLevel,
+} from "./lib/packages.mjs";
 
 /** @typedef {"major" | "minor" | "patch"} Level */
 /** @typedef {{ number: number, title: string, body: string, labels: string[], url?: string }} PullRequest */
@@ -224,10 +230,12 @@ export function visibleInApps(/** @type {string} */ body) {
 
 /**
  * The GitHub release notes.
- * @param {{ version: string, prs: PullRequest[], repository: string, packages: string[] }} input
- *   packages: the package names (`@<scope>/aurora-<name>`)
+ * @param {{ version: string, prs: PullRequest[], repository: string, packages: string[], top?: string[] }} input
+ *   packages: the package names (`@<scope>/aurora-<name>`);
+ *   top: the ones no other package depends on, what a first pin adds
+ *   (default: all of them)
  */
-export function releaseNotes({ version, prs, repository, packages }) {
+export function releaseNotes({ version, prs, repository, packages, top }) {
   const out = [];
   if (version.startsWith("0.0."))
     out.push(
@@ -260,13 +268,20 @@ export function releaseNotes({ version, prs, repository, packages }) {
     overrides[name] = url;
   }
   const atTag = `https://github.com/${repository}/blob/v${version}`;
+  const [owner] = repository.split("/");
+  const add = (top ?? packages)
+    .map((n) => parseName(n)?.name)
+    .filter(Boolean)
+    .join(",");
+  const workflow = `${repository}/.github/workflows/release.yml`;
   out.push(
     "## Install",
     "",
-    `With [\`aurora-pin\`](${atTag}/scripts/consumer/aurora-pin.mjs) copied into your app as \`scripts/aurora-pin.mjs\`:`,
+    `With [\`aurora-pin\`](${atTag}/scripts/consumer/aurora-pin.mjs) copied into your app as \`scripts/aurora-pin.mjs\` (pnpm 10.x only, see the contract below). The first pin names the owner and the packages to add; a later bump needs only the version:`,
     "",
     "```sh",
-    `node scripts/aurora-pin.mjs ${version} --owner ${repository.split("/")[0]}`,
+    `node scripts/aurora-pin.mjs ${version} --owner ${owner}${add ? ` --add ${add}` : ""}`,
+    `node scripts/aurora-pin.mjs ${version}`,
     "```",
     "",
     "It checks every tarball against `SHA256SUMS`, records the checksums and writes these entries (list only the packages you import; the overrides cover them all):",
@@ -275,7 +290,13 @@ export function releaseNotes({ version, prs, repository, packages }) {
     JSON.stringify({ dependencies: deps, pnpm: { overrides } }, null, 2),
     "```",
     "",
-    `Each tarball carries a build provenance attestation (\`gh attestation verify <file> --repo ${repository}\`). The whole contract: [docs/CONSUMING.md](${atTag}/docs/CONSUMING.md).`,
+    "Each tarball carries a build provenance attestation. Check that it was built by this repository's release workflow on main:",
+    "",
+    "```sh",
+    `gh attestation verify <file> --repo ${repository} --signer-workflow ${workflow} --source-ref refs/heads/main`,
+    "```",
+    "",
+    `The whole contract: [docs/CONSUMING.md](${atTag}/docs/CONSUMING.md).`,
   );
   return out.join("\n") + "\n";
 }
@@ -372,7 +393,10 @@ function packagesChangedSince(last, head) {
 }
 
 /** Whether the tag `last` is an ancestor of `head` (true without a tag). */
-function isAfter(/** @type {string | null} */ last, /** @type {string} */ head) {
+function isAfter(
+  /** @type {string | null} */ last,
+  /** @type {string} */ head,
+) {
   if (!last) return true;
   try {
     git("merge-base", "--is-ancestor", last, head);
@@ -501,6 +525,9 @@ function cmdNotes(args) {
     prs: readPrs(required(args, "--prs")),
     repository: required(args, "--repository"),
     packages: listPackages().map((p) => String(p.manifest["name"])),
+    top: topLevel(
+      listPackages().map((p) => /** @type {{ name: string }} */ (p.manifest)),
+    ).map((m) => m.name),
   });
   writeFileSync(required(args, "--out"), notes);
 }

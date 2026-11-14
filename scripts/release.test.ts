@@ -10,6 +10,7 @@ import {
   sha256sums,
   visibleInApps,
 } from "./release.mjs";
+import { parseCli, pin } from "./consumer/aurora-pin.mjs";
 
 // Built from parts, so the scope check does not read these fixtures as real names.
 const scoped = (scope: string, name: string) => `@${scope}/aurora-${name}`;
@@ -297,8 +298,46 @@ describe("releaseNotes", () => {
     expect(notes).toContain(`(${at}/scripts/consumer/aurora-pin.mjs)`);
     expect(notes).toContain(`(${at}/docs/CONSUMING.md)`);
     expect(notes).toContain(
-      "node scripts/aurora-pin.mjs 0.0.2 --owner someone",
+      "node scripts/aurora-pin.mjs 0.0.2 --owner someone --add canary\n",
     );
+    expect(notes).toContain("node scripts/aurora-pin.mjs 0.0.2\n");
+    expect(notes).toContain(
+      "gh attestation verify <file> --repo someone/aurora --signer-workflow someone/aurora/.github/workflows/release.yml --source-ref refs/heads/main",
+    );
+  });
+
+  it("prints a first-pin command that pins an app with no Aurora dependency yet", () => {
+    const two = releaseNotes({
+      version: "0.1.0",
+      repository: "someone/aurora",
+      packages: [scoped("example", "core"), scoped("example", "widgets")],
+      top: [scoped("example", "widgets")],
+      prs: [],
+    });
+    const line = two
+      .split("\n")
+      .find(
+        (l) =>
+          l.startsWith("node scripts/aurora-pin.mjs") && l.includes("--add"),
+      );
+    expect(line).toBeDefined();
+    const cli = parseCli((line ?? "").split(" ").slice(2));
+    if (cli.verify) throw new Error("expected a pin command");
+    const pinned = pin(
+      { name: "app", private: true, type: "module" },
+      {
+        version: cli.version,
+        owner: cli.owner,
+        add: cli.add,
+        scope: "example",
+        packages: ["core", "widgets"],
+      },
+    );
+    expect(Object.keys(pinned["dependencies"])).toEqual(["@aurora/widgets"]);
+    expect(Object.keys(pinned["pnpm"]["overrides"])).toEqual([
+      scoped("example", "core"),
+      scoped("example", "widgets"),
+    ]);
   });
 
   it("shows the asset URLs under the neutral key and as the override", () => {

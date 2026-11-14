@@ -75,3 +75,26 @@ export function tarballName(
 ) {
   return `${name.replace(/^@/, "").replace("/", "-")}-${version}.tgz`;
 }
+
+/**
+ * The packages no other packed package depends on: what an app lists.
+ * @template {{ name: string, dependencies?: Record<string, string>, peerDependencies?: Record<string, string>, optionalDependencies?: Record<string, string> }} M
+ * @param {M[]} manifests
+ * @returns {M[]}
+ */
+export function topLevel(manifests) {
+  const used = new Set(
+    manifests.flatMap((m) =>
+      ["dependencies", "peerDependencies", "optionalDependencies"].flatMap(
+        (s) =>
+          Object.keys(
+            /** @type {Record<string, unknown>} */ (
+              m[/** @type {"dependencies"} */ (s)] ?? {}
+            ),
+          ),
+      ),
+    ),
+  );
+  const top = manifests.filter((m) => !used.has(m.name));
+  return top.length ? top : manifests;
+}
