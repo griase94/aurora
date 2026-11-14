@@ -14,9 +14,14 @@ version to the next. `<owner>` below is the GitHub account that owns the Aurora 
 
 ## Today: release assets
 
-Until the packages are on npm, an app needs **pnpm 10 or newer**: the contract relies on
-`pnpm.overrides`, and `aurora-pin` runs `pnpm install`. npm (`overrides`), Yarn (`resolutions`) and
-Bun are not supported yet.
+Until the packages are on npm, an app needs **pnpm 10.x**: the contract relies on `pnpm.overrides`
+in `package.json`, and `aurora-pin` runs `pnpm install`. pnpm 11 and newer do not work: they no
+longer read `pnpm.overrides` from `package.json`, and they block tarball URLs as subdependencies by
+default (`blockExoticSubdeps`), so a package's siblings would be fetched from the npm registry
+instead of the release. `aurora-pin` refuses any other pnpm; pin it with
+`"packageManager": "pnpm@10.x.y"`. The way forward is tracked in
+[issue 95](../../../issues/95). npm (`overrides`), Yarn (`resolutions`)
+and Bun are not supported yet.
 
 Each [GitHub release](../../../releases) carries one tarball per package, `SHA256SUMS`, and release
 notes with the snippet for that version. An app's `package.json`, as `aurora-pin` writes it:
@@ -63,11 +68,14 @@ notes with the snippet for that version. An app's `package.json`, as `aurora-pin
      `node scripts/aurora-pin.mjs --verify` in the app's CI: it downloads the pinned assets again and
      fails when one differs from the recorded checksum.
 - **Provenance** (optional, in CI or by hand): each tarball carries a build provenance attestation.
+  Check that the release workflow built it on `main`, not only that some workflow of the repository
+  did:
 
   ```sh
   gh release download v0.1.0 --repo <owner>/aurora
   sha256sum -c SHA256SUMS
-  gh attestation verify griase94-aurora-svelte-0.1.0.tgz --repo <owner>/aurora
+  gh attestation verify griase94-aurora-svelte-0.1.0.tgz --repo <owner>/aurora \
+    --signer-workflow <owner>/aurora/.github/workflows/release.yml --source-ref refs/heads/main
   ```
 
 - **Hosting.** Release assets of a public repository download without authentication, so a build on
@@ -100,8 +108,9 @@ an unknown flag is refused. Commit `package.json` and `pnpm-lock.yaml` together.
 2. If the Aurora repository has a `CONSUMERS_TOKEN` secret, it sends a `repository_dispatch` event
    `aurora-released` with `client_payload.version` to each repository in its `AURORA_CONSUMERS`
    variable. Without it, an app checks on a schedule
-   (`gh release list --repo <owner>/aurora --limit 1 --json tagName`; `gh release view` without a
-   tag skips pre-releases, and every `0.0.x` release is one).
+   (`gh release list --repo <owner>/aurora --exclude-drafts --limit 1 --json tagName`;
+   `--exclude-drafts` matters to a token with write access, and `gh release view` without a tag
+   skips pre-releases, and every `0.0.x` release is one).
 3. The app opens a pull request that runs `aurora-pin.mjs <version>`; its own CI decides. Read the
    release notes: each entry says whether the change is visible in apps (`fix`, `improvement`, `none`).
 4. Rolling back is the same command with the previous version.

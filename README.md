@@ -15,9 +15,10 @@ how) move here with the kit; their public link follows once they are built from 
 ## Using Aurora in an app
 
 Every merged change to a package produces a [release](../../releases) with the packed tarballs,
-`SHA256SUMS` and a build provenance attestation. Until the packages are on npm, an app (pnpm 10 or
-newer) pins the release assets by URL and imports them under a neutral name, `@aurora/<name>`. One
-command does it, checks every tarball against `SHA256SUMS` and records the checksums:
+`SHA256SUMS` and a build provenance attestation. Until the packages are on npm, an app (pnpm 10.x;
+pnpm 11 ignores the overrides this needs, see the contract) pins the release assets by URL and
+imports them under a neutral name, `@aurora/<name>`. One command does it, checks every tarball
+against `SHA256SUMS` and records the checksums:
 
 ```sh
 node scripts/aurora-pin.mjs 0.1.0 --owner <owner> --add svelte

@@ -16,8 +16,10 @@ Aurora is pre-release (`0.x`). Only the latest release receives fixes.
 
 ## Release integrity
 
-Every release asset is listed in `SHA256SUMS` and carries a build provenance attestation:
+Every release asset is listed in `SHA256SUMS` and carries a build provenance attestation. Verify
+that the release workflow signed it on `main`:
 
 ```sh
-gh attestation verify <tarball> --repo <owner>/aurora
+gh attestation verify <tarball> --repo <owner>/aurora \
+  --signer-workflow <owner>/aurora/.github/workflows/release.yml --source-ref refs/heads/main
 ```

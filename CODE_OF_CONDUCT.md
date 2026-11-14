@@ -7,6 +7,8 @@ harassment, insults and personal attacks out of every space of this project: iss
 reviews and discussions.
 
 Report unacceptable behaviour to the maintainers privately, through the contact on the repository
-owner's GitHub profile. Reports are handled confidentially. Maintainers may edit or remove
+owner's GitHub profile. If you find none there, open an issue titled "Code of conduct: private
+contact needed", with no details about the incident: a maintainer answers with a private channel.
+Reports are handled confidentially. Maintainers may edit or remove
 contributions and block participants who do not follow this code, as the Covenant's enforcement
 guidelines describe.
