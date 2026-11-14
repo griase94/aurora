@@ -1,0 +1,28 @@
+# Security updates for the npm dependencies and weekly, grouped updates for
+# the SHA-pinned actions. Dependabot security updates must also be switched on
+# in the repository settings.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    labels: ["ci", "aurora:skip"]
+    commit-message:
+      prefix: "ci"
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # 0 turns version updates off and keeps security updates on.
+    open-pull-requests-limit: 0
+    groups:
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+    commit-message:
+      prefix: "deps"

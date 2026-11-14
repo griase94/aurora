@@ -1,0 +1,67 @@
+name: Component gap
+description: A component, variant or capability Aurora lacks, written so someone can build it without asking.
+labels: ["aurora-gap"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A gap is done when this issue would let someone build it without asking. Everything here is public.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Which screen, which user, what they cannot do today; the current workaround; screenshots at the widths where it hurts.
+    validations:
+      required: true
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Layer
+      description: Where it belongs (DESIGN.md, Layers).
+      options:
+        - Core (any app)
+        - Brand (a theme decides it)
+        - Product (one app's composition; usually not an Aurora gap)
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Anatomy, variants, sizes, states (empty, loading, error, disabled, overflow), slots, API sketch (props and events), tokens it uses or adds.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives rejected
+      description: Each existing component, variant or composition considered, and why it does not fit.
+  - type: textarea
+    id: decisions
+    attributes:
+      label: Decisions for the maintainer
+      description: Each open taste question with its options and the recommended one.
+  - type: textarea
+    id: a11y
+    attributes:
+      label: Accessibility
+      description: Roles and names, keyboard map, focus, target sizes, contrast in Light and Dark, reduced motion, screen-reader announcements.
+    validations:
+      required: true
+  - type: textarea
+    id: responsive
+    attributes:
+      label: Responsive
+      description: Behaviour from 320 to 1920 px, narrow containers, 200 % text.
+  - type: textarea
+    id: content
+    attributes:
+      label: Content
+      description: Default copy (English) and message keys, long-word cases, empty and error wording.
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      description: Checkable criteria, each one a test, a specimen or a screenshot.
+    validations:
+      required: true

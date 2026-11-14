@@ -188,7 +188,14 @@ export function releaseNotes({ version, prs, repository, packages }) {
   if (!shown.length) out.push("No pull request with a release label.", "");
   for (const pr of shown) {
     out.push(`### ${pr.title.trim()} (#${pr.number})`, "");
-    out.push(section(pr.body, "Changelog") || "No changelog entry.", "");
+    // The "Visible in apps" line sits in the template's Changelog section;
+    // it is printed once, below.
+    const changelog = section(pr.body, "Changelog")
+      .split("\n")
+      .filter((l) => !/^[\s>*_-]*Visible in apps\b/i.test(l))
+      .join("\n")
+      .trim();
+    out.push(changelog || "No changelog entry.", "");
     out.push(`Visible in apps: ${visibleInApps(pr.body) ?? "not stated"}`, "");
   }
   const base = `https://github.com/${repository}/releases/download/v${version}`;

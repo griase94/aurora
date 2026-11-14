@@ -212,6 +212,7 @@ describe("releaseNotes", () => {
     expect(notes).toContain("### Trim the name (#7)");
     expect(notes).toContain("- `chirp` trims the name.");
     expect(notes).toContain("Visible in apps: fix");
+    expect(notes.match(/Visible in apps/g)).toHaveLength(1);
     expect(notes).not.toContain("Docs only");
   });
 
