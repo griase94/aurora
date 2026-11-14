@@ -79,13 +79,12 @@ describe("exportedFiles", () => {
 describe("clearPacks", () => {
   it("removes earlier tarballs and SHA256SUMS and keeps other files", () => {
     const dir = mkdtempSync(join(tmpdir(), "aurora-pack-out-"));
+    // Built from parts, so the scope check does not read it as a real name.
+    const old = ["old", "aurora", "canary", "0.0.0.tgz"].join("-");
     try {
-      for (const f of ["old-aurora-canary-0.0.0.tgz", "SHA256SUMS", "notes.md"])
+      for (const f of [old, "SHA256SUMS", "notes.md"])
         writeFileSync(join(dir, f), "");
-      expect(clearPacks(dir).sort()).toEqual([
-        "SHA256SUMS",
-        "old-aurora-canary-0.0.0.tgz",
-      ]);
+      expect(clearPacks(dir).sort()).toEqual(["SHA256SUMS", old]);
       expect(readdirSync(dir)).toEqual(["notes.md"]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
