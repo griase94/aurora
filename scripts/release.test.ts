@@ -278,7 +278,9 @@ describe("releaseNotes", () => {
     const at = "https://github.com/someone/aurora/blob/v0.0.2";
     expect(notes).toContain(`(${at}/scripts/consumer/aurora-pin.mjs)`);
     expect(notes).toContain(`(${at}/docs/CONSUMING.md)`);
-    expect(notes).toContain("node scripts/aurora-pin.mjs 0.0.2");
+    expect(notes).toContain(
+      "node scripts/aurora-pin.mjs 0.0.2 --owner someone",
+    );
   });
 
   it("shows the asset URLs under the neutral key and as the override", () => {

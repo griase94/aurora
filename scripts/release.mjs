@@ -255,7 +255,7 @@ export function releaseNotes({ version, prs, repository, packages }) {
     `With [\`aurora-pin\`](${atTag}/scripts/consumer/aurora-pin.mjs) copied into your app as \`scripts/aurora-pin.mjs\`:`,
     "",
     "```sh",
-    `node scripts/aurora-pin.mjs ${version}`,
+    `node scripts/aurora-pin.mjs ${version} --owner ${repository.split("/")[0]}`,
     "```",
     "",
     "It checks every tarball against `SHA256SUMS`, records the checksums and writes these entries (list only the packages you import; the overrides cover them all):",
