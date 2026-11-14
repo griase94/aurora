@@ -4,5 +4,5 @@
  */
 export function chirp(name: string): string {
   const who = name.trim() || "world";
-  return `Aurora canary says hello again, ${who}.`;
+  return `Aurora canary says hello once more, ${who}.`;
 }

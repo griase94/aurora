@@ -3,10 +3,10 @@ import { chirp } from "./index.js";
 
 describe("chirp", () => {
   it("greets the name it is given", () => {
-    expect(chirp("Atlas")).toBe("Aurora canary says hello again, Atlas.");
+    expect(chirp("Atlas")).toBe("Aurora canary says hello once more, Atlas.");
   });
 
   it("falls back to the world for a blank name", () => {
-    expect(chirp("   ")).toBe("Aurora canary says hello again, world.");
+    expect(chirp("   ")).toBe("Aurora canary says hello once more, world.");
   });
 });
