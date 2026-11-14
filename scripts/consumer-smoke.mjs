@@ -158,7 +158,9 @@ function run(
     execFileSync(cmd, args, { cwd, stdio: "inherit" });
   } catch (e) {
     const status = /** @type {{ status?: number }} */ (e).status;
-    throw new Error(`${cmd} ${args[0]} failed (exit ${status ?? "?"})`);
+    throw new Error(`${cmd} ${args[0]} failed (exit ${status ?? "?"})`, {
+      cause: e,
+    });
   }
 }
 
