@@ -6,6 +6,7 @@ import {
   parseCli,
   parseSums,
   pin,
+  pnpmProblem,
   releasePackages,
   sha256,
 } from "./aurora-pin.mjs";
@@ -380,5 +381,17 @@ describe("parseCli", () => {
     expect(() => parseCli(["0.3.0", "0.4.0"])).toThrow(/one version/);
     expect(parseCli(["--verify"])).toEqual({ verify: true });
     expect(() => parseCli(["--verify", "0.3.0"])).toThrow(/--verify/);
+  });
+});
+
+describe("pnpmProblem", () => {
+  it("accepts pnpm 10.x", () => {
+    expect(pnpmProblem("10.11.1\n")).toBeNull();
+    expect(pnpmProblem("10.34.7")).toBeNull();
+  });
+
+  it("refuses pnpm 11 and newer, older majors and a missing pnpm, and says why", () => {
+    for (const v of ["11.28.9", "12.10.0", "9.15.0", ""])
+      expect(pnpmProblem(v)).toMatch(/need pnpm 10\.x.*ignore pnpm\.overrides/);
   });
 });

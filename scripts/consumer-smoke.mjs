@@ -14,11 +14,17 @@
  * skipped here; the example apps build them through a bundler.
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { pin } from "./consumer/aurora-pin.mjs";
+import { pin, pnpmProblem } from "./consumer/aurora-pin.mjs";
 import { parseName, topLevel } from "./lib/packages.mjs";
 
 export { topLevel };
@@ -55,10 +61,11 @@ export function nodeEntries(exports) {
  * The consumer's package.json for a directory of tarballs, written by the
  * apps' own `pin()`: the top-level packages as `@aurora/<name>` dependencies,
  * an override for every package.
- * @param {string} dir absolute directory holding the tarballs
  * @param {PackedManifest[]} manifests the packed package.json of each tarball
+ * @param {string} [base] where the tarballs are; the default is the
+ *   project's own directory, so the path stays short wherever the checkout is
  */
-export function consumerManifest(dir, manifests) {
+export function consumerManifest(manifests, base = "file:.") {
   const parsed = manifests.map((m) => {
     const p = parseName(m.name);
     if (!p) throw new Error(`${m.name} is not @<scope>/aurora-<name>`);
@@ -81,7 +88,7 @@ export function consumerManifest(dir, manifests) {
       scope: /** @type {string} */ ([...scopes][0]),
       packages: parsed.map((p) => p.name),
       add: topLevel(manifests).map((m) => parseName(m.name)?.name ?? ""),
-      base: `file:${dir}`,
+      base,
     },
   );
 }
@@ -92,12 +99,14 @@ function main() {
     console.error("usage: consumer-smoke.mjs <dir-with-tarballs>");
     process.exit(2);
   }
+  // Fail closed: under another pnpm the overrides are ignored and a lone
+  // package would still install, so the smoke would pass for nothing.
+  const pnpm = execFileSync("pnpm", ["--version"], { encoding: "utf8" });
+  const problem = pnpmProblem(pnpm);
+  if (problem) throw new Error(problem);
   const abs = resolve(dir);
   const files = readdirSync(abs).filter((f) => f.endsWith(".tgz"));
-  if (!files.length) {
-    console.error(`consumer-smoke: no tarballs in ${abs}`);
-    process.exit(1);
-  }
+  if (!files.length) throw new Error(`no tarballs in ${abs}`);
   /** @type {PackedManifest[]} */
   const manifests = files.map((f) =>
     JSON.parse(
@@ -108,17 +117,17 @@ function main() {
   );
   const app = mkdtempSync(join(tmpdir(), "aurora-consumer-"));
   try {
+    // The tarballs sit inside the project: pnpm names its store index after
+    // the relative `file:` path, which grows too long from a deep checkout.
+    for (const f of files) copyFileSync(join(abs, f), join(app, f));
     writeFileSync(
       join(app, "package.json"),
-      JSON.stringify(consumerManifest(abs, manifests), null, 2),
+      JSON.stringify(consumerManifest(manifests), null, 2),
     );
-    execFileSync(
+    run(
       "pnpm",
       ["install", "--ignore-workspace", "--config.engine-strict=false"],
-      {
-        cwd: app,
-        stdio: "inherit",
-      },
+      app,
     );
     let imported = 0;
     for (const m of topLevel(manifests)) {
@@ -126,15 +135,11 @@ function main() {
       for (const entry of nodeEntries(m.exports)) {
         const spec = entry === "." ? key : `${key}/${entry.slice(2)}`;
         const code = `const m = await import(${JSON.stringify(spec)}); if (!Object.keys(m).length) throw new Error("no exports"); console.log(${JSON.stringify(spec)} + ": " + Object.keys(m).join(", "));`;
-        execFileSync("node", ["--input-type=module", "-e", code], {
-          cwd: app,
-          stdio: "inherit",
-        });
+        run("node", ["--input-type=module", "-e", code], app);
         imported += 1;
       }
     }
-    if (!imported)
-      throw new Error("consumer-smoke: no entry Node could import");
+    if (!imported) throw new Error("no entry Node could import");
     console.log(
       `consumer-smoke: ${imported} entr${imported === 1 ? "y" : "ies"} import from the packed tarballs`,
     );
@@ -143,8 +148,28 @@ function main() {
   }
 }
 
+/** Runs a command with its output shown; throws a one-line error on failure. */
+function run(
+  /** @type {string} */ cmd,
+  /** @type {string[]} */ args,
+  /** @type {string} */ cwd,
+) {
+  try {
+    execFileSync(cmd, args, { cwd, stdio: "inherit" });
+  } catch (e) {
+    const status = /** @type {{ status?: number }} */ (e).status;
+    throw new Error(`${cmd} ${args[0]} failed (exit ${status ?? "?"})`);
+  }
+}
+
 if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-)
-  main();
+) {
+  try {
+    main();
+  } catch (e) {
+    console.error(`consumer-smoke: ${/** @type {Error} */ (e).message}`);
+    process.exit(1);
+  }
+}

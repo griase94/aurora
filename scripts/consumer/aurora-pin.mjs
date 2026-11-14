@@ -28,6 +28,11 @@
  * packages depend on each other under their scoped names
  * (`@<scope>/aurora-<name>`), and without an override pnpm would ask the npm
  * registry for those names. Registry pins drop the overrides and checksums.
+ *
+ * Asset pins need pnpm 10.x, and the script refuses any other pnpm: pnpm 11
+ * no longer reads `pnpm.overrides` from package.json and blocks tarball
+ * subdependencies by default, so the sibling packages would be looked up on
+ * the npm registry under a scope Aurora does not own there.
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -90,6 +95,32 @@ export function releaseBase({ owner, repo = "aurora", version }) {
   if (!GITHUB_PART.test(repo))
     throw new Error(`not a repository name: ${repo}`);
   return `https://github.com/${owner}/${repo}/releases/download/v${normalizeVersion(version)}`;
+}
+
+/**
+ * Why this pnpm cannot install release-asset pins, or null when it can
+ * (10.x only).
+ * @param {string} version the output of `pnpm --version`
+ */
+export function pnpmProblem(version) {
+  const major = /^(\d+)\./.exec(version.trim())?.[1];
+  if (major === "10") return null;
+  return (
+    `release-asset pins need pnpm 10.x, found ${version.trim() || "no version"}. ` +
+    "pnpm 11 and newer ignore pnpm.overrides in package.json and block tarball " +
+    "subdependencies by default, so the sibling packages would be fetched from " +
+    "the npm registry instead of the release. Pin pnpm 10 (packageManager) or " +
+    "use --registry npm once Aurora is on npm. See docs/CONSUMING.md."
+  );
+}
+
+/** `pnpm --version` in the current directory, or "" when pnpm is missing. */
+function pnpmVersion() {
+  try {
+    return execFileSync("pnpm", ["--version"], { encoding: "utf8" }).trim();
+  } catch {
+    return "";
+  }
 }
 
 /**
@@ -422,6 +453,11 @@ async function main() {
     const text = readFileSync(file, "utf8");
     const manifest = JSON.parse(text);
     if (cli.verify) return await verify(manifest);
+    if (cli.registry !== "npm") {
+      const found = pnpmVersion();
+      const problem = pnpmProblem(found);
+      if (problem && (found || cli.install)) throw new Error(problem);
+    }
     const indent = /^(\s+)"/m.exec(text)?.[1] ?? "  ";
     const next = await pinRelease(manifest, cli);
     writeFileSync(file, JSON.stringify(next, null, indent) + "\n");
