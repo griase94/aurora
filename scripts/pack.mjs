@@ -20,6 +20,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
 } from "node:fs";
@@ -122,11 +123,27 @@ function attw(/** @type {string} */ tgz) {
     .map((p) => `${p["kind"]} (${p["resolutionKind"]}): ${p["entrypoint"]}`);
 }
 
+/**
+ * Empties an output directory of earlier packs (tarballs, SHA256SUMS), so a
+ * renamed or removed package leaves no stale tarball for the smoke to install.
+ * Other files stay.
+ * @param {string} dir
+ * @returns {string[]} the files removed
+ */
+export function clearPacks(dir) {
+  const removed = readdirSync(dir).filter(
+    (f) => f.endsWith(".tgz") || f === "SHA256SUMS",
+  );
+  for (const f of removed) rmSync(join(dir, f), { force: true });
+  return removed;
+}
+
 function main() {
   const i = process.argv.indexOf("--out");
   const keepDir = i > 0 ? resolve(String(process.argv[i + 1])) : null;
   const out = keepDir ?? mkdtempSync(join(tmpdir(), "aurora-pack-"));
   mkdirSync(out, { recursive: true });
+  for (const f of clearPacks(out)) console.log(`aurora:pack: removed old ${f}`);
   const packages = listPackages();
   if (!packages.length) {
     console.error("aurora:pack: no packages under packages/");

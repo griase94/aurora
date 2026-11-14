@@ -1,5 +1,8 @@
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { contentProblems, exportedFiles } from "./pack.mjs";
+import { clearPacks, contentProblems, exportedFiles } from "./pack.mjs";
 
 const manifest = {
   exports: {
@@ -70,5 +73,22 @@ describe("exportedFiles", () => {
       "./dist/index.js",
       "./package.json",
     ]);
+  });
+});
+
+describe("clearPacks", () => {
+  it("removes earlier tarballs and SHA256SUMS and keeps other files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aurora-pack-out-"));
+    try {
+      for (const f of ["old-aurora-canary-0.0.0.tgz", "SHA256SUMS", "notes.md"])
+        writeFileSync(join(dir, f), "");
+      expect(clearPacks(dir).sort()).toEqual([
+        "SHA256SUMS",
+        "old-aurora-canary-0.0.0.tgz",
+      ]);
+      expect(readdirSync(dir)).toEqual(["notes.md"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
