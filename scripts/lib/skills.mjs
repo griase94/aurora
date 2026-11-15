@@ -211,10 +211,7 @@ export function checkSkills(skillsDir, { repo } = {}) {
       problems.push(
         `${rel(file)}: description does not say when to load it ("Use when …")`,
       );
-    for (const [key, value] of [
-      ["name", name],
-      ["description", description],
-    ])
+    for (const [key, value] of Object.entries({ name, description }))
       if (XML_TAG.test(value))
         problems.push(`${rel(file)}: ${key} contains an XML tag`);
     const compatibility = fields.get("compatibility");
