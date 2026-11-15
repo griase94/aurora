@@ -1,6 +1,7 @@
 ---
 name: building-components
-description: Writes and changes Aurora Svelte 5 components so they conform to the API charter (packages/svelte/CHARTER.md): rule ids, the kit:api checker and its shrink-only exception baseline, the public entry table, where stories, specimens and tests go, and the definition of done for a component pull request. Use when adding a component or component family, changing a component's props, events, snippets, root element or exports, fixing a charter violation, reading kit:api output, touching kit-api.exceptions.json or scripts/aurora-entries.mjs, or when asked to "build a component", "add a prop", "make it charter-clean" or "is this component done".
+description: >-
+  Writes and changes Aurora Svelte 5 components so they conform to the API charter (packages/svelte/CHARTER.md): rule ids, the kit:api checker and its shrink-only exception baseline, the public entry table, where stories, specimens and tests go, and the definition of done for a component pull request. Use when adding a component or component family, changing a component's props, events, snippets, root element or exports, fixing a charter violation, reading kit:api output, touching kit-api.exceptions.json or scripts/aurora-entries.mjs, or when asked to "build a component", "add a prop", "make it charter-clean" or "is this component done".
 ---
 
 # Building components

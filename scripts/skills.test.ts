@@ -1,9 +1,11 @@
 /**
- * The agent skills in .claude/skills stay loadable and indexed: valid Agent
- * Skills frontmatter (name equal to its folder, a description within the
- * format's limit that says when to load it), a SKILL.md body short enough to
- * load whole, relative links that resolve, and a README index that lists
- * exactly the skills that exist.
+ * The agent skills in .claude/skills stay loadable and indexed: frontmatter
+ * that a strict YAML parser reads (name equal to its folder, a description
+ * within the format's limit that says when to load it, no XML tags, no
+ * reserved words), a SKILL.md body short enough to load whole, relative links
+ * that resolve, a README index and an AGENTS.md list that name exactly the
+ * skills that exist, and, once apps/docs is in the repository, every path and
+ * package script the skills name.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,6 +16,7 @@ import {
   BODY_MAX_LINES,
   DESCRIPTION_MAX,
   checkSkills,
+  namedFacts,
   parseSkill,
   relativeLinks,
 } from "./lib/skills.mjs";
@@ -22,7 +25,7 @@ const SKILLS = join(REPO, ".claude", "skills");
 
 describe("agent skills", () => {
   it("every skill in the repository passes", () => {
-    expect(checkSkills(SKILLS)).toEqual([]);
+    expect(checkSkills(SKILLS, { repo: REPO })).toEqual([]);
   });
 });
 
@@ -32,16 +35,20 @@ describe("the skills check", () => {
     for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
   });
 
-  /** A skills folder from `files` (path → content); returns its problems. */
-  function check(files: Record<string, string>): string[] {
+  /** A folder from `files` (path → content); returns its path. */
+  function tree(files: Record<string, string>): string {
     const root = mkdtempSync(join(tmpdir(), "skills-"));
     dirs.push(root);
     for (const [path, text] of Object.entries(files)) {
       mkdirSync(dirname(join(root, path)), { recursive: true });
       writeFileSync(join(root, path), text);
     }
-    return checkSkills(root);
+    return root;
   }
+
+  /** A skills folder from `files`; returns its problems. */
+  const check = (files: Record<string, string>): string[] =>
+    checkSkills(tree(files));
 
   const skill = (name: string, description: string, body = "# Body\n") =>
     `---\nname: ${name}\ndescription: ${description}\n---\n\n${body}`;
@@ -94,7 +101,7 @@ describe("the skills check", () => {
         "a/SKILL.md": "# no frontmatter\n",
         "README.md": index("a"),
       }).join("\n"),
-    ).toMatch(/no valid frontmatter/);
+    ).toMatch(/no frontmatter between/);
   });
 
   it("fails a body over the line limit", () => {
@@ -130,12 +137,98 @@ describe("the skills check", () => {
     );
   });
 
-  it("reads quoted values and indented maps", () => {
+  it("reads quoted values and nested maps", () => {
     const parsed = parseSkill(
       '---\nname: a\ndescription: "Quoted: yes. Use when x."\nmetadata:\n  owner: x\n---\nbody\n',
     );
-    expect(parsed?.fields.get("description")).toBe("Quoted: yes. Use when x.");
-    expect(parsed?.fields.get("metadata")).toContain("owner: x");
+    expect(parsed).not.toHaveProperty("error");
+    if ("error" in parsed) return;
+    expect(parsed.fields.get("description")).toBe("Quoted: yes. Use when x.");
+    expect(parsed.fields.get("metadata")).toEqual({ owner: "x" });
+  });
+
+  it("fails an unquoted description with a colon, which strict YAML rejects", () => {
+    const problems = check({
+      "a/SKILL.md": skill("a", "Note: x. Use when y."),
+      "README.md": index("a"),
+    });
+    expect(problems.join("\n")).toMatch(
+      /a\/SKILL\.md: frontmatter is not valid YAML/,
+    );
+  });
+
+  it("reads CRLF line endings", () => {
+    expect(
+      check({
+        "a/SKILL.md": skill("a", ok).replaceAll("\n", "\r\n"),
+        "README.md": index("a"),
+      }),
+    ).toEqual([]);
+  });
+
+  it("fails an XML tag in the description and a reserved word in the name", () => {
+    const problems = check({
+      "claude-a/SKILL.md": skill(
+        "claude-a",
+        "Does <b>a</b> thing. Use when x.",
+      ),
+      "README.md": index("claude-a"),
+    }).join("\n");
+    expect(problems).toMatch(/description contains an XML tag/);
+    expect(problems).toMatch(/reserved word "claude"/);
+  });
+
+  it("fails an AGENTS.md that does not name every skill", () => {
+    const repo = tree({
+      ".claude/skills/a/SKILL.md": skill("a", ok),
+      ".claude/skills/b/SKILL.md": skill("b", ok),
+      ".claude/skills/README.md": index("a", "b"),
+      "AGENTS.md": "- components: `a`\n",
+    });
+    expect(checkSkills(join(repo, ".claude/skills"), { repo })).toEqual([
+      "AGENTS.md: the Skills list does not name `b`",
+    ]);
+  });
+
+  it("holds named paths and scripts against the repository once apps/docs exists", () => {
+    const body = [
+      "Edit `apps/docs/scripts/real.ts` and `apps/docs/examples/<slug>.svelte`.",
+      "```sh",
+      "pnpm -C apps/docs kit:api && pnpm -C apps/docs kit:gone",
+      "pnpm test:fast tests/unit/gone.test.ts",
+      "```",
+    ].join("\n");
+    const files = {
+      ".claude/skills/a/SKILL.md": skill("a", ok, body),
+      ".claude/skills/README.md": index("a"),
+      "AGENTS.md": "`a`\n",
+      "package.json": JSON.stringify({ scripts: { "test:fast": "vitest" } }),
+    };
+    const before = tree(files);
+    expect(
+      checkSkills(join(before, ".claude/skills"), { repo: before }),
+    ).toEqual([]);
+    const after = tree({
+      ...files,
+      "apps/docs/package.json": JSON.stringify({ scripts: { "kit:api": "x" } }),
+      "apps/docs/scripts/real.ts": "",
+      "apps/docs/examples/button.svelte": "",
+    });
+    expect(checkSkills(join(after, ".claude/skills"), { repo: after })).toEqual(
+      [
+        "a/SKILL.md: names tests/unit/gone.test.ts, which does not exist",
+        "a/SKILL.md: names pnpm -C apps/docs kit:gone, which apps/docs/package.json does not define",
+      ],
+    );
+  });
+
+  it("finds paths and scripts in inline code and code blocks only", () => {
+    const facts = namedFacts(
+      "apps/docs/prose.ts `packages/x/index.ts`, `$kit/a` `../apps/b`\n```sh\npnpm -s -C apps/docs llm:check\npnpm dlx storybook\n```\n",
+    );
+    expect([...facts.paths]).toEqual(["apps/docs", "packages/x/index.ts"]);
+    expect([...facts.docsScripts]).toEqual(["llm:check"]);
+    expect([...facts.rootScripts]).toEqual([]);
   });
 
   it("ignores links inside code", () => {
