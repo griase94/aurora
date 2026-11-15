@@ -1,16 +1,6 @@
 ---
 name: writing-agent-ready-docs
 description: Generates and checks Aurora's docs for coding agents (llms.txt, llms-full.txt, kit.json, one Markdown page per component, the example files, install facts derived from package.json) and the llm:check readiness gate. Use when changing apps/docs/scripts/kit-gen.ts, kit-index.ts, kit-package.ts, llm-readiness.ts, an apps/docs/examples file or packages/*/AGENTS.md, or when asked to make the docs "LLM ready" or "agent friendly", fix llms.txt, kit.json or a component's Markdown page, or set up Storybook MCP.
-paths:
-  - "apps/docs/scripts/kit-gen.ts"
-  - "apps/docs/scripts/kit-index.ts"
-  - "apps/docs/scripts/kit-package.ts"
-  - "apps/docs/scripts/kit-examples.ts"
-  - "apps/docs/scripts/llm-readiness.ts"
-  - "apps/docs/scripts/check-llm-readiness.ts"
-  - "apps/docs/scripts/llm-readiness.allowlist.txt"
-  - "apps/docs/examples/**"
-  - "packages/*/AGENTS.md"
 ---
 
 # Writing agent-ready docs
@@ -46,7 +36,7 @@ the site root, where llmstxt.org says an agent looks.
   tour, no history, no maintainer notes: research on context files found that overviews do
   not help agents and specific instructions do.
 - **One example per component, written as a consumer writes it**:
-  `apps/docs/examples/<slug>.svelte`, importing only package entries (`@aurora/svelte/<entry>`),
+  `apps/docs/examples/<slug>.svelte`, importing only public package entries (`<package>/<entry>`),
   no `$lib`, no `$kit`, no relative path. `kit:gen` prints it verbatim into `c/<slug>.md` and
   `kit.json`; `pnpm -C apps/docs examples:check` type-checks it.
 - **Props come from the component.** Name, type, default resolved to its value (`"md"`, not a

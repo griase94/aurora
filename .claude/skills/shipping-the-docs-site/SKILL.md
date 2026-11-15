@@ -1,17 +1,6 @@
 ---
 name: shipping-the-docs-site
 description: Builds, caches and measures Aurora's composed docs site (Atlas at /, the Storybook Handbook at /handbook/, the agent files at both roots) for speed and correctness. Use when changing apps/docs/vercel.json, apps/docs/package.json, .storybook/main.ts, manager.ts or preview.css, the compose or check scripts, a size budget, fonts, generated-data loading, docgen or the Storybook version, or when the site loads slowly, a link breaks only when deployed, or someone asks to measure, cache or upgrade the docs site.
-paths:
-  - "apps/docs/vercel.json"
-  - "apps/docs/package.json"
-  - "apps/docs/.storybook/main.ts"
-  - "apps/docs/.storybook/manager.ts"
-  - "apps/docs/.storybook/preview.css"
-  - "apps/docs/.storybook/handbook-stories.ts"
-  - "apps/docs/scripts/site-compose.ts"
-  - "apps/docs/scripts/check-site.ts"
-  - "apps/docs/scripts/check-handbook-budgets.mjs"
-  - "apps/docs/scripts/dataset-chunks.ts"
 ---
 
 # Shipping the docs site

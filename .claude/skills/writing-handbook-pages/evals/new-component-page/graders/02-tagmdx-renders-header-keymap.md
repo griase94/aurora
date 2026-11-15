@@ -4,4 +4,4 @@ focus: trace
 weight: 1
 ---
 
-Tag.mdx renders header, keymap, tokens and provenance chapters with <Kit...> blocks from @aurora/handbook-blocks, not with Canvas of a story
+Tag.mdx renders the header, keymap, tokens and props chapters with the Kit blocks imported from $kit-blocks, not with a Canvas of a story

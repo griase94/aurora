@@ -1,12 +1,6 @@
 ---
 name: writing-handbook-pages
 description: Writes and reviews Aurora Handbook pages in Storybook (Svelte CSF stories with defineMeta, MDX component pages, the React doc blocks from $kit-blocks, tags, a11y parameters, sidebar titles, prop JSDoc). Use when adding or changing a component's *.stories.svelte or *.mdx, a block under apps/docs/.storybook/blocks, preview.ts or the page template, or when asked to "document a component", "add a story", "fix the Handbook page" or "follow Storybook best practice".
-paths:
-  - "**/*.stories.svelte"
-  - "**/*.mdx"
-  - "apps/docs/.storybook/**"
-  - "apps/docs/src/lib/kit/templates/**"
-  - "apps/docs/src/lib/kit/handbuch/**"
 ---
 
 # Writing Handbook pages

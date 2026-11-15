@@ -1,12 +1,6 @@
 ---
 name: building-atlas-specimens
 description: Builds and reviews Aurora Atlas, the live showroom (specimen files *.showcase.svelte, the stage with viewport and device frames, the frame message protocol, the wall of tiles, Atlas pages and the public build). Use when adding or changing a component's *.showcase.svelte, anything under apps/docs/src/lib/kit/showcase, frame sizing or scale, the wall's mounting, or when the Atlas is slow, janky at phone width, shows the wrong size or theme, or leaks maintainer content.
-paths:
-  - "**/*.showcase.svelte"
-  - "apps/docs/src/lib/kit/showcase/**"
-  - "apps/docs/tests/atlas/**"
-  - "apps/docs/scripts/check-atlas-budgets.mjs"
-  - "apps/docs/scripts/check-atlas-public.mjs"
 ---
 
 # Building Atlas specimens
