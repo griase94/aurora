@@ -87,9 +87,11 @@ The shape in a few lines, a story and the chapter that embeds it, is in
 
 ## Titles, voice, public build
 
-- Titles are ASCII English `Components/<Family>/<Name>`, the family the Atlas files it under
-  (`apps/docs/src/lib/kit/taxonomy.ts`). Roots: Start, Foundations, Components, Patterns,
-  Workshop (internal build only). The title becomes the docs id
+- Titles are English `Components/<Family>/<Name>`. `<Family>` is the `title.en` of the Atlas
+  group the component sits in (`apps/docs/src/lib/kit/showcase/groups.ts`), written exactly,
+  spaces and `&` included: `Components/Status & identity/StatusPill`. Roots: Start,
+  Foundations, Components, Patterns, Workshop (internal build only); `tests/unit/kit-story-roots.test.ts`
+  checks both. The title becomes the docs id
   (`components-actions-button--docs`); a rename adds a row to `apps/docs/.storybook/legacy-ids.ts`.
 - `parameters.options.storySort` stays an inline, self-contained function in `apps/docs/.storybook/preview.ts`:
   Storybook parses that file statically, and a named constant is a build error.
@@ -114,10 +116,10 @@ The shape in a few lines, a story and the chapter that embeds it, is in
 ## Check your work
 
 ```sh
-# Legacy Svelte CSF (must print nothing):
-git grep -nE '<Meta[ >]|export const meta|<Template|legacyTemplate|let:args|let:context|<Story[^>]* (id|autodocs|source)[ =>]' -- '*.stories.svelte'
+# No legacy Svelte CSF left (exits 1 and prints the lines when some is):
+! git grep -nE '<Meta[ >]|export const meta|<Template|legacyTemplate|let:args|let:context|<Story[^>]* (id|autodocs|source)[ =>]' -- '*.stories.svelte'
 pnpm test:fast tests/unit/kit-doc-blocks.test.ts tests/unit/kit-parameters-staleness.test.ts \
-  tests/unit/kit-story-coverage.test.ts tests/unit/kit-public-voice.test.ts
+  tests/unit/kit-story-coverage.test.ts tests/unit/kit-public-voice.test.ts tests/unit/kit-story-roots.test.ts
 pnpm -C apps/docs docs:check                  # type-checks the blocks and the examples
 pnpm -C apps/docs kit:build                   # kit:test and handbook:check read this build
 pnpm -C apps/docs handbook:check
@@ -127,8 +129,8 @@ pnpm -C apps/docs kit:test docs-blocks --workers=2                   # when a bl
 pnpm lint
 ```
 
-Green is every command exiting 0, with at least one test listed by each filtered run (a
-filter that matches nothing exits 0 too). Then open the page at 390 and 1440 px, Light and Dark: no
+Green is every command exiting 0. A filter that matches nothing fails with "No tests found";
+`-g` is a regular expression, so escape `( ) . +` in a title. Then open the page at 390 and 1440 px, Light and Dark: no
 console error, no horizontal scroll, one props table with the component's own props first.
 
 ## Sources

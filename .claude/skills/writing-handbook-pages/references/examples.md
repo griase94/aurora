@@ -1,6 +1,7 @@
 # Writing Handbook pages: worked example
 
-The smallest shape of a page, for a `Tag` component in the family `Status`. The full contract,
+The smallest shape of a page, for a `Tag` component in the Atlas group `status`, whose title
+is `Status & identity`. The full contract,
 with every chapter and the `parameters.kit` fields, is
 `apps/docs/src/lib/kit/templates/ComponentPage.template.md`: copy that, not this.
 
@@ -21,7 +22,7 @@ with every chapter and the `parameters.kit` fields, is
 	};
 
 	const { Story } = defineMeta({
-		title: "Components/Status/Tag",
+		title: "Components/Status & identity/Tag",
 		component: Tag,
 		tags: ["status:stable"], // never "autodocs": the MDX below is the page
 		parameters: { kit },

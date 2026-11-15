@@ -122,21 +122,22 @@ pnpm -C apps/docs kit:api                     # exit 0: the summary line, no pro
 node scripts/aurora-package.mjs --check       # the exports maps match the entry table
 pnpm test:fast packages/svelte/src/lib/components/ui/<family> \
   tests/unit/kit-api-charter.test.ts tests/unit/aurora-entries.test.ts \
-  tests/unit/kit-story-coverage.test.ts tests/unit/kit-showcase-coverage.test.ts
+  tests/unit/kit-story-coverage.test.ts tests/unit/kit-showcase-coverage.test.ts \
+  tests/unit/kit-story-roots.test.ts            # the page title's family is the Atlas group's
 pnpm -C apps/docs docs:check                  # blocks and example files type-check
 pnpm -C apps/docs llm:check
 pnpm -C apps/docs kit:build                   # kit:test serves this build: build first
 pnpm -C apps/docs kit:test axe-stories target-size -g "<Title> · " --workers=2
-pnpm -C apps/docs kit:test keyboard-plays -g "<docs-id-prefix>--" --workers=2
 pnpm -C apps/docs kit:test reduced-motion forced-colors --workers=2
 pnpm check && pnpm lint
 ```
 
+With a `Keyboard` story, also run `pnpm -C apps/docs kit:test keyboard-plays -g "<docs-id-prefix>--" --workers=2`.
 `<Title>` is the story title (`Components/Actions/Button`), `<docs-id-prefix>` its id form
-(`components-actions-button`): axe tests are named by title, keyboard tests by story id.
-Green is every command exiting 0 **and** each filtered run listing at least one test (the
-keyboard run for an interactive component; a filter that matches nothing exits 0 too). Then open the Handbook page and the Atlas specimen
-at 390 and 1440 px, Light and Dark, and use the component with the keyboard only.
+(`components-actions-button`). Green is every command exiting 0; a filter that matches
+nothing fails with "No tests found", and `-g` is a regular expression (escape `( ) . +`).
+Then open the Handbook page and the Atlas specimen at 390 and 1440 px, Light and Dark, and
+use the component with the keyboard only.
 
 ## Sources
 
