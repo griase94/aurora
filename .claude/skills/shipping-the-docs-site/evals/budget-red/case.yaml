@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: budget-red
+expected_outcome: |
+  Investigates what grew first; re-anchors only with the measured value, date and reason plus about 5 % headroom.

@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: phone-frame-jump
+expected_outcome: |
+  Keeps frames at true size or a stated scale of at least 75 %, stacks instead of shrinking, and keeps the panel in place; sizing rules in frame-size.ts/layout.ts with a unit test.

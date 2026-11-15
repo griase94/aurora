@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: cache-manager-immutable
+expected_outcome: |
+  Declines immutable for unhashed manager files, explains the stale-manager risk, keeps immutable for hashed assets only, and proposes measuring on the deployment.

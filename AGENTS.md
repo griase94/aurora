@@ -32,6 +32,23 @@ git-ignored.
   into apps and must stay dependency-free.
 - `docs/CONSUMING.md`: the consumer contract. Change it with any change to how apps install Aurora.
 
+## Skills
+
+Task procedures live in `.claude/skills/` (index: `.claude/skills/README.md`). Read the one
+that matches your task before you start:
+
+- adding or changing a component, its props or exports, `kit:api` output:
+  `building-components`
+- Handbook stories, MDX pages, doc blocks: `writing-handbook-pages`
+- `llms.txt`, `kit.json`, per-component Markdown, example files: `writing-agent-ready-docs`
+- Atlas specimens, stage, frames, wall: `building-atlas-specimens`
+- the docs site's build, caching, budgets, Storybook upgrades: `shipping-the-docs-site`
+
+These skills describe `apps/docs` and `packages/svelte`. Until the kit import brings those
+into this repository, their paths and commands do not resolve here; the skills guard starts
+checking them once `apps/docs` exists.
+A pull request that changes a convention updates its skill in the same pull request.
+
 ## Rules
 
 - **Pull requests only**; never push to `main`. Draft until ready. Exactly one label of

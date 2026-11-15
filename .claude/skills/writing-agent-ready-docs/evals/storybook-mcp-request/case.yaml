@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: storybook-mcp-request
+expected_outcome: |
+  Explains the MCP docs toolset needs a components manifest Svelte lacks before Storybook 11; keeps llms.txt, c/*.md and kit.json as the public contract.

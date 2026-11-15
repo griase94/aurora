@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: baseline-bump
+expected_outcome: |
+  Refuses to raise the count in kit-api.exceptions.json; fixes the NEW C-DOC-1 violation by adding a JSDoc sentence to the prop instead.

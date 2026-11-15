@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: install-section
+expected_outcome: |
+  Finds the existing install section (installSection in apps/docs/scripts/kit-package.ts) and sharpens it there: imports through the alias, the stylesheet import; facts still derived from packages/*/package.json, no package name or scope typed by hand.

@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: new-specimen
+expected_outcome: |
+  Tag.showcase.svelte beside the component exporting entry: ShowcaseEntry, controls enumerated from the component's exports, code() importing from the public entry, no props table or history.
