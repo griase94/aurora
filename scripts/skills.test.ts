@@ -5,7 +5,8 @@
  * reserved words), a SKILL.md body short enough to load whole, relative links
  * that resolve, a README index and an AGENTS.md list that name exactly the
  * skills that exist, and, once apps/docs is in the repository, every path and
- * package script the skills name.
+ * package script the skills name, with every named test file inside the root
+ * vitest include.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,6 +17,7 @@ import {
   BODY_MAX_LINES,
   DESCRIPTION_MAX,
   checkSkills,
+  matchesGlob,
   namedFacts,
   parseSkill,
   relativeLinks,
@@ -221,6 +223,62 @@ describe("the skills check", () => {
         "a/SKILL.md: names pnpm -C apps/docs kit:gone, which apps/docs/package.json does not define",
       ],
     );
+  });
+
+  it("fails a named test file that the root vitest include does not run", () => {
+    const body = [
+      "```sh",
+      "pnpm test:fast tests/unit/a.test.ts scripts/b.test.ts",
+      "```",
+    ].join("\n");
+    const files = {
+      ".claude/skills/a/SKILL.md": skill("a", ok, body),
+      ".claude/skills/README.md": index("a"),
+      "AGENTS.md": "`a`\n",
+      "package.json": JSON.stringify({ scripts: { "test:fast": "vitest" } }),
+      "apps/docs/package.json": "{}",
+      "tests/unit/a.test.ts": "",
+      "scripts/b.test.ts": "",
+    };
+    const config = (include: string) =>
+      `export default defineConfig({ test: { include: [${include}] } });\n`;
+    const narrow = tree({
+      ...files,
+      "vitest.config.ts": config('"scripts/**/*.test.ts"'),
+    });
+    expect(
+      checkSkills(join(narrow, ".claude/skills"), { repo: narrow }),
+    ).toEqual([
+      "a/SKILL.md: names tests/unit/a.test.ts, which the vitest include in vitest.config.ts does not cover",
+    ]);
+    const wide = tree({
+      ...files,
+      "vitest.config.ts": config(
+        '"scripts/**/*.test.ts", "tests/unit/**/*.test.ts"',
+      ),
+    });
+    expect(checkSkills(join(wide, ".claude/skills"), { repo: wide })).toEqual(
+      [],
+    );
+  });
+
+  it("matches * within a segment and ** across segments", () => {
+    expect(matchesGlob("scripts/b.test.ts", "scripts/**/*.test.ts")).toBe(true);
+    expect(matchesGlob("scripts/x/y/b.test.ts", "scripts/**/*.test.ts")).toBe(
+      true,
+    );
+    expect(matchesGlob("tests/unit/a.test.ts", "scripts/**/*.test.ts")).toBe(
+      false,
+    );
+    expect(
+      matchesGlob(
+        "packages/svelte/src/a.test.ts",
+        "packages/*/src/**/*.test.ts",
+      ),
+    ).toBe(true);
+    expect(
+      matchesGlob("packages/a/b/src/a.test.ts", "packages/*/src/**/*.test.ts"),
+    ).toBe(false);
   });
 
   it("finds paths and scripts in inline code and shell blocks only", () => {

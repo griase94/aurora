@@ -129,6 +129,45 @@ function pathExists(repo, path) {
   return folder !== "" && existsSync(join(repo, folder));
 }
 
+/**
+ * The `test.include` globs of the root vitest.config.ts, read from its text;
+ * `undefined` when the file or the list is missing (vitest then includes every
+ * `*.test.ts`).
+ * @param {string} repo
+ * @returns {string[] | undefined}
+ */
+export function vitestInclude(repo) {
+  const file = join(repo, "vitest.config.ts");
+  if (!existsSync(file)) return undefined;
+  const list = /\binclude:\s*\[([^\]]*)\]/.exec(readFileSync(file, "utf8"));
+  if (!list) return undefined;
+  return [...(list[1] ?? "").matchAll(/["'`]([^"'`]+)["'`]/g)].map(
+    (m) => m[1] ?? "",
+  );
+}
+
+/**
+ * Whether a repository path matches a glob of `*` (one segment) and `**`
+ * (any number of segments).
+ * @param {string} path
+ * @param {string} glob
+ */
+export function matchesGlob(path, glob) {
+  let source = "";
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i] ?? "";
+    if (glob.startsWith("**/", i)) {
+      source += "(?:.*/)?";
+      i += 2;
+    } else if (glob.startsWith("**", i)) {
+      source += ".*";
+      i += 1;
+    } else if (c === "*") source += "[^/]*";
+    else source += c.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${source}$`).test(path);
+}
+
 /** @param {string} file */
 function scripts(file) {
   if (!existsSync(file)) return new Set();
@@ -155,7 +194,8 @@ function markdownFiles(dir) {
  * Every problem with the skills under `skillsDir`, one line each; empty when
  * all hold. With `repo` (the repository root) it also checks that the root
  * AGENTS.md names every skill and, once `apps/docs` exists there, that every
- * path and package script the skills name exists.
+ * path and package script the skills name exists, and that every test file
+ * they name is one the root vitest include runs.
  * @param {string} skillsDir
  * @param {{ repo?: string }} [options]
  * @returns {string[]}
@@ -277,6 +317,7 @@ function checkRepoFacts(root, repo, skills) {
   if (!existsSync(join(repo, "apps", "docs", "package.json"))) return problems;
   const docsScripts = scripts(join(repo, "apps", "docs", "package.json"));
   const rootScripts = scripts(join(repo, "package.json"));
+  const include = vitestInclude(repo);
   const files = [
     join(root, "README.md"),
     ...skills.flatMap((s) => {
@@ -294,6 +335,16 @@ function checkRepoFacts(root, repo, skills) {
     for (const path of facts.paths)
       if (!pathExists(repo, path))
         problems.push(`${where}: names ${path}, which does not exist`);
+      else if (
+        include &&
+        /\.test\.ts$/.test(path) &&
+        !/[<*{$]/.test(path) &&
+        !include.some((glob) => matchesGlob(path, glob))
+      )
+        // `pnpm test:fast <file>` finds no test outside the include and exits 1.
+        problems.push(
+          `${where}: names ${path}, which the vitest include in vitest.config.ts does not cover`,
+        );
     for (const name of facts.docsScripts)
       if (!docsScripts.has(name))
         problems.push(
