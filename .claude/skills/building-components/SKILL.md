@@ -25,13 +25,13 @@ and when a component pull request is done.
 A family is a folder `packages/svelte/src/lib/components/ui/<family>/`. Name new files after
 the component the way the family's existing files are named:
 
-| File                                   | What                                                             |
-| -------------------------------------- | ---------------------------------------------------------------- |
-| `index.ts`                             | the public entry `<package>/<family>`: each component and its `<Name>Props` type (C-EXPORT-1) |
-| `<name>.svelte`                        | the component, `@component` plus one JSDoc sentence per prop (C-DOC-1) |
-| `<name>.test.ts` (+ `<name>.test.svelte`) | unit tests beside the component; a `.test.svelte` is a harness |
-| `<name>.stories.svelte`, `<name>.mdx`  | the Handbook page: the `writing-handbook-pages` skill            |
-| `<Name>.showcase.svelte`               | the Atlas specimen: the `building-atlas-specimens` skill          |
+| File                                      | What                                                                                          |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `index.ts`                                | the public entry `<package>/<family>`: each component and its `<Name>Props` type (C-EXPORT-1) |
+| `<name>.svelte`                           | the component, `@component` plus one JSDoc sentence per prop (C-DOC-1)                        |
+| `<name>.test.ts` (+ `<name>.test.svelte`) | unit tests beside the component; a `.test.svelte` is a harness                                |
+| `<name>.stories.svelte`, `<name>.mdx`     | the Handbook page: the `writing-handbook-pages` skill                                         |
+| `<Name>.showcase.svelte`                  | the Atlas specimen: the `building-atlas-specimens` skill                                      |
 
 The copyable example is `apps/docs/examples/<slug>.svelte` (the `writing-agent-ready-docs`
 skill). Browser specs that cross components (axe, keyboard plays, target size, reduced
@@ -53,15 +53,15 @@ specimen code import only through an entry, never a deep path or a `.svelte` fil
 compares it with the baseline `apps/docs/kit-api.exceptions.json`. Exit 0 prints one summary
 line. Exit 1 prints one line per problem:
 
-| Prefix     | Meaning and what you do                                                       |
-| ---------- | ----------------------------------------------------------------------------- |
-| `NEW`      | a violation the baseline does not allow: fix the component                    |
+| Prefix     | Meaning and what you do                                                            |
+| ---------- | ---------------------------------------------------------------------------------- |
+| `NEW`      | a violation the baseline does not allow: fix the component                         |
 | `NEW-COMP` | a component added after the baseline has a violation: fix it; it gets no exception |
-| `FIXED`    | you fixed one: lower the count in the baseline, or delete the entry at 0      |
-| `GROWN`    | the baseline holds more than its base: undo the raise                         |
-| `GONE`     | a component left the public set: delete it from `population`                 |
-| `UNKNOWN`  | the baseline names a rule that does not exist                                 |
-| `WAIVER`   | an inline waiver is not recorded in the baseline                              |
+| `FIXED`    | you fixed one: lower the count in the baseline, or delete the entry at 0           |
+| `GROWN`    | the baseline holds more than its base: undo the raise                              |
+| `GONE`     | a component left the public set: delete it from `population`                       |
+| `UNKNOWN`  | the baseline names a rule that does not exist                                      |
+| `WAIVER`   | an inline waiver is not recorded in the baseline                                   |
 
 `--all` prints every violation of every component, `--json` the full report (props,
 bindables, rest, root facts, waivers). Both exit 0: use them to read, not to gate.

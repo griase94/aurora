@@ -13,14 +13,14 @@ Never hand-edit a generated file; fix the source or the generator.
 
 ## The files
 
-| File                         | What it holds                                                         |
-| ---------------------------- | --------------------------------------------------------------------- |
-| `llms.txt`                   | llmstxt.org index: H1, `>` summary, rules, install section, then `## Start`, `## Foundations` and one `## <Family>` list per family of `- [Name](…/c/<slug>.md) purpose \`import\` [docs](…)` |
-| `c/<slug>.md`                | one component in plain Markdown: purpose, when to use, variants, anatomy, example, do and don't, parts, props, tokens |
-| `p/<slug>.md`                | the Markdown twin of a Start or Foundations page                      |
-| `kit.json`                   | the same facts as JSON (`schemaVersion`, `package`, `pages`, `components`, `tokens`, `charter`) |
-| `llms-full.txt`              | every page's prose in one file                                        |
-| `packages/svelte/AGENTS.md`  | install, import, styles, charter summary; shipped in the package      |
+| File                        | What it holds                                                                                                                                                                                                                         |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `llms.txt`                  | llmstxt.org index: H1, `>` summary, rules, install section, then `## Start`, `## Foundations` and one `## <Family>` section per family: per component a link to its `c/<slug>.md`, its purpose, its import line and its Handbook link |
+| `c/<slug>.md`               | one component in plain Markdown: purpose, when to use, variants, anatomy, example, do and don't, parts, props, tokens                                                                                                                 |
+| `p/<slug>.md`               | the Markdown twin of a Start or Foundations page                                                                                                                                                                                      |
+| `kit.json`                  | the same facts as JSON (`schemaVersion`, `package`, `pages`, `components`, `tokens`, `charter`)                                                                                                                                       |
+| `llms-full.txt`             | every page's prose in one file                                                                                                                                                                                                        |
+| `packages/svelte/AGENTS.md` | install, import, styles, charter summary; shipped in the package                                                                                                                                                                      |
 
 `kit:gen` writes them to `apps/docs/src/lib/kit/generated/public/`; the Handbook serves them
 at `/handbook/`, and `site-compose.ts` copies `llms.txt`, `llms-full.txt` and `kit.json` to
