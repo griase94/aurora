@@ -20,7 +20,7 @@ export const ALLOWED_FIELDS = new Set([
 export const NAME_MAX = 64;
 export const DESCRIPTION_MAX = 1024;
 export const COMPATIBILITY_MAX = 500;
-/** This repository's limit for a SKILL.md body: longer material goes to reference/. */
+/** This repository's limit for a SKILL.md body: longer material goes to references/. */
 export const BODY_MAX_LINES = 150;
 
 const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -83,13 +83,14 @@ const REPO_PATH = new RegExp(
 
 /**
  * The repository paths and package scripts a skill text names, in inline
- * code and in code blocks: `apps/…`, `packages/…`, `scripts/…`, `tests/…`,
- * `docs/…`, `pnpm -C apps/docs <script>` and `pnpm <script>`.
+ * code and in shell code blocks (other code blocks are illustrations):
+ * `apps/…`, `packages/…`, `scripts/…`, `tests/…`, `docs/…`,
+ * `pnpm -C apps/docs <script>` and `pnpm <script>`.
  * @param {string} text
  */
 export function namedFacts(text) {
   const code = [
-    ...[...text.matchAll(/^```[^\n]*\n([\s\S]*?)^```/gm)].map(
+    ...[...text.matchAll(/^```(?:sh|bash|shell)\n([\s\S]*?)^```/gm)].map(
       (m) => m[1] ?? "",
     ),
     ...[...text.replace(/^```[\s\S]*?^```/gm, "").matchAll(/`([^`\n]+)`/g)].map(
@@ -228,7 +229,7 @@ export function checkSkills(skillsDir, { repo } = {}) {
     const lines = body.replace(/\n+$/, "").split("\n").length;
     if (lines > BODY_MAX_LINES)
       problems.push(
-        `${rel(file)}: body has ${lines} lines (at most ${BODY_MAX_LINES}; move detail to reference/)`,
+        `${rel(file)}: body has ${lines} lines (at most ${BODY_MAX_LINES}; move detail to references/)`,
       );
   }
 
@@ -283,10 +284,10 @@ function checkRepoFacts(root, repo, skills) {
     join(root, "README.md"),
     ...skills.flatMap((s) => {
       const dir = join(root, s);
-      const reference = join(dir, "reference");
+      const references = join(dir, "references");
       return [
         join(dir, "SKILL.md"),
-        ...(existsSync(reference) ? markdownFiles(reference) : []),
+        ...(existsSync(references) ? markdownFiles(references) : []),
       ];
     }),
   ].filter((f) => existsSync(f));

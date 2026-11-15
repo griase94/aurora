@@ -116,12 +116,13 @@ describe("the skills check", () => {
 
   it("fails a relative link that does not resolve, in a skill or its references", () => {
     const problems = check({
-      "a/SKILL.md": skill("a", ok, "See [it](reference/gone.md).\n"),
-      "a/reference/here.md": "[back](../SKILL.md) [out](https://example.com)\n",
+      "a/SKILL.md": skill("a", ok, "See [it](references/gone.md).\n"),
+      "a/references/here.md":
+        "[back](../SKILL.md) [out](https://example.com)\n",
       "README.md": index("a"),
     });
     expect(problems).toEqual([
-      "a/SKILL.md: link reference/gone.md does not resolve",
+      "a/SKILL.md: link references/gone.md does not resolve",
     ]);
   });
 
@@ -222,9 +223,9 @@ describe("the skills check", () => {
     );
   });
 
-  it("finds paths and scripts in inline code and code blocks only", () => {
+  it("finds paths and scripts in inline code and shell blocks only", () => {
     const facts = namedFacts(
-      "apps/docs/prose.ts `packages/x/index.ts`, `$kit/a` `../apps/b`\n```sh\npnpm -s -C apps/docs llm:check\npnpm dlx storybook\n```\n",
+      'apps/docs/prose.ts `packages/x/index.ts`, `$kit/a` `../apps/b`\n```sh\npnpm -s -C apps/docs llm:check\npnpm dlx storybook\n```\n```svelte\nsource: "packages/y/Example.svelte"\n```\n',
     );
     expect([...facts.paths]).toEqual(["apps/docs", "packages/x/index.ts"]);
     expect([...facts.docsScripts]).toEqual(["llm:check"]);

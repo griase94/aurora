@@ -3,7 +3,7 @@
 Procedures for agents (and people) working on Aurora's components and its two docs sites:
 **Aurora Atlas**, the showroom at `/`, and the **Aurora Handbook**, the Storybook reference at
 `/handbook/`. Each skill is a folder in the [Agent Skills](https://agentskills.io/specification)
-format: a short, rule-first `SKILL.md`, longer material in `reference/`, test prompts in
+format: a short, rule-first `SKILL.md`, longer material in `references/`, test prompts in
 `evals/`.
 
 ## Index

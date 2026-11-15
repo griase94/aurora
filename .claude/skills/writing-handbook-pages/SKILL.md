@@ -11,6 +11,8 @@ keyboard, tokens. The Atlas is the showroom; neither repeats what the other owns
 The page contract is `apps/docs/src/lib/kit/templates/ComponentPage.template.md`. Copy its two
 blocks (`<Name>.stories.svelte`, `<Name>.mdx`), replace the name, delete nothing. A page is
 `<KitHeader />`, chapters `01 Overview` to `11 Tokens` in order, then `<KitMaintainer>`.
+The shape in a few lines, a story and the chapter that embeds it, is in
+[references/examples.md](references/examples.md); the template stays the full source.
 
 ## Rules
 
@@ -24,21 +26,26 @@ blocks (`<Name>.stories.svelte`, `<Name>.mdx`), replace the name, delete nothing
   `apps/docs/.storybook/blocks/`, never a hidden story (`tests/unit/kit-doc-blocks.test.ts`).
 - **Write only `defineMeta` Svelte CSF**, `import { defineMeta } from "@storybook/addon-svelte-csf"`.
   Never `<Meta>`, `export const meta`, `<Template>`, `legacyTemplate`, `let:args`, `let:context`,
-  or `id`/`autodocs`/`source` on `<Story>`: Storybook 11 removes them, and with `defineMeta`
-  only, the upgrade is an import swap done by its `addon-svelte-csf-to-core` automigration.
+  or `id`/`autodocs`/`source` on `<Story>`: that syntax is removed in Storybook 11, and with
+  `defineMeta` only, the upgrade is an import swap done by its `addon-svelte-csf-to-core`
+  automigration.
 - **Keep preprocessor-only code out of a story file's script** (a TypeScript `enum`, for
   example): Storybook 11 indexes story files without preprocessors. Put it in a module.
 - **`parameters.kit` sits on the meta** (`defineMeta({ parameters: { kit } })`), typed
   `KitParameters` from `$kit/kit-parameters`, and is read from source, never from memory:
   `tests/unit/kit-parameters-staleness.test.ts` resolves its tokens, anatomy selectors and
   `provenBy` names against the component.
-- **Describe props in the component, not the story.** One JSDoc sentence per public prop
-  (what it does; the default when it is not a literal), `@component` on the component. The
-  props block, `kit.json` and Storybook's docgen all read the component; an `argTypes`
-  description is a second copy that drifts. Charter rule `C-DOC-1` checks it.
-- **Reach the docs app through aliases** (`$kit/...`, `$kit-blocks`), never `../../..`; link
-  between pages with `docsHref()` / `storyHref()` from `apps/docs/src/lib/kit/handbuch/links.ts`,
-  never a literal `?path=`: the Handbook lives under `/handbook/`.
+- **Describe props in the component, not the story.** One JSDoc sentence per prop (what it
+  does; the default when it is not a literal), `@component` on the component. Charter rule
+  `C-DOC-1` checks it and exempts the props the charter defines (`ref`, `class`, `children`,
+  `value`, `open`, `disabled`, …). The props block, `kit.json` and Storybook's docgen all
+  read the component; an `argTypes` description is a second copy that drifts.
+- **Reach the docs app through aliases** (`$kit/...`, `$kit-blocks`), never `../../..`.
+- **Link between pages by docs id.** In MDX, a relative `?path=/docs/<docs-id>` link
+  (`check-site.ts` verifies it against the index); never a root-absolute `/?path=`, which
+  leaves `/handbook/` for the Atlas. A Svelte block links with `docsHref()` / `storyHref()`
+  from `apps/docs/src/lib/kit/handbuch/links.ts`, which opens the page outside the preview
+  frame.
 
 ## Stories
 
@@ -47,16 +54,21 @@ blocks (`<Name>.stories.svelte`, `<Name>.mdx`), replace the name, delete nothing
   `{#snippet template(args, context)}`.
 - Story `name` and `exportName` are short English (`name="States"`). Product copy rendered
   inside a specimen is the only text that may be in another language.
-- Tags: the meta carries `status:<kit.status>` only. `!dev` hides a specimen only its page
+- Tags: the meta carries `status:<kit.status>`. `!dev` hides a specimen only its page
   shows from the sidebar (it stays in `index.json` and in the tests); `!test` keeps a showcase
   combination out of test runs; `!manifest` keeps a story out of Storybook's component
   manifest. Never the `autodocs` tag on a file with an MDX page: Storybook stops the whole
   build at index time. Never `!autodocs`: `autodocs` is not a global tag, so it does nothing.
-- A `Keyboard` story's `play` proves the keymap rows that cite it (`provenBy: "Keyboard"`);
-  assert with `expect` and `step` from `storybook/test`, never `throw`.
+- A `Keyboard` story's `play` proves the keymap rows that cite it (`provenBy: "Keyboard"`).
+  In a new play, prefer `expect` and `step` from `storybook/test`: the panel shows each step.
+  A `throw` fails too (`apps/docs/tests/kit/keyboard-plays.spec.ts` treats a logged error as
+  red), so existing plays that throw need no rewrite.
 - Element ids derive from the story (`context.id`): specimens of one page share a document.
 - Data comes from the docs app's invented fixtures (`apps/docs/src/lib/kit/fixtures`), never
   from an app's server code or real records: the site is public.
+- Every component folder has a page or a line in
+  `tests/unit/kit-story-coverage.allowlist.txt`, which only shrinks: delete the line when you
+  add the page.
 
 ## MDX pages and blocks
 
@@ -103,16 +115,20 @@ blocks (`<Name>.stories.svelte`, `<Name>.mdx`), replace the name, delete nothing
 
 ```sh
 # Legacy Svelte CSF (must print nothing):
-git grep -nE '<Meta[ >]|export const meta|<Template|legacyTemplate|let:args|let:context' -- '*.stories.svelte'
+git grep -nE '<Meta[ >]|export const meta|<Template|legacyTemplate|let:args|let:context|<Story[^>]* (id|autodocs|source)[ =>]' -- '*.stories.svelte'
 pnpm test:fast tests/unit/kit-doc-blocks.test.ts tests/unit/kit-parameters-staleness.test.ts \
   tests/unit/kit-story-coverage.test.ts tests/unit/kit-public-voice.test.ts
-pnpm -C apps/docs docs:check                          # type-checks the blocks and the examples
-pnpm -C apps/docs kit:test axe-stories -g "<Title>"   # axe over the page's stories
-pnpm -C apps/docs kit:build && pnpm -C apps/docs handbook:check
+pnpm -C apps/docs docs:check                  # type-checks the blocks and the examples
+pnpm -C apps/docs kit:build                   # kit:test and handbook:check read this build
+pnpm -C apps/docs handbook:check
+pnpm -C apps/docs kit:test axe-stories -g "<Title> · " --workers=2   # axe over the stories
+pnpm -C apps/docs kit:test docs-axe -g "<Title>" --workers=2         # axe over the MDX page
+pnpm -C apps/docs kit:test docs-blocks --workers=2                   # when a block changed
 pnpm lint
 ```
 
-Green is every command exiting 0. Then open the page at 390 and 1440 px, Light and Dark: no
+Green is every command exiting 0, with at least one test listed by each filtered run (a
+filter that matches nothing exits 0 too). Then open the page at 390 and 1440 px, Light and Dark: no
 console error, no horizontal scroll, one props table with the component's own props first.
 
 ## Sources
@@ -128,5 +144,8 @@ console error, no horizontal scroll, one props table with the component's own pr
 - Accessibility testing (`test: off | todo | error`, `todo` silent in CI, `a11y.manual`, axe
   catches part of WCAG): https://storybook.js.org/docs/writing-tests/accessibility-testing
 - Play functions, `expect` and `step`: https://storybook.js.org/docs/writing-tests/interaction-testing
+- An attached MDX page plus the `autodocs` tag is an indexing error ("You created a component
+  docs page for …, but also tagged the CSF file with 'autodocs'"):
+  https://github.com/storybookjs/storybook/blob/v10.1.0/code/core/src/core-server/utils/StoryIndexGenerator.ts#L678-L682
 - Component manifest and `!manifest`: https://storybook.js.org/docs/ai/manifests
 - Naming and `storySort`: https://storybook.js.org/docs/writing-stories/naming-components-and-hierarchy

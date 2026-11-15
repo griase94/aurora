@@ -1,14 +1,16 @@
 ---
 name: building-components
 description: >-
-  Writes and changes Aurora Svelte 5 components so they conform to the API charter (packages/svelte/CHARTER.md): rule ids, the kit:api checker and its shrink-only exception baseline, the public entry table, where stories, specimens and tests go, and the definition of done for a component pull request. Use when adding a component or component family, changing a component's props, events, snippets, root element or exports, fixing a charter violation, reading kit:api output, touching kit-api.exceptions.json or scripts/aurora-entries.mjs, or when asked to "build a component", "add a prop", "make it charter-clean" or "is this component done".
+  Writes and changes Aurora Svelte 5 components so they conform to the API charter (packages/svelte/CHARTER.md): rule ids, the kit:api checker and its shrink-only exception baseline, the public entry table and the exports maps written from it, where stories, specimens and tests go, and the definition of done for a component pull request. Use when adding a component or component family, changing a component's props, events, snippets, root element or exports, fixing a charter violation, reading kit:api output, touching kit-api.exceptions.json or scripts/aurora-entries.mjs, or when asked to "build a component", "add a prop", "make it charter-clean" or "is this component done".
 ---
 
 # Building components
 
 The contract is `packages/svelte/CHARTER.md`. Read the rules your change touches there; this
 skill does not restate them. It says where a component's files go, how the checker reports,
-and when a component pull request is done.
+and when a component pull request is done. Start a new component from the charter's
+**Reference component** section: one complete component that keeps every `C-` rule, checked
+by the test suite so it cannot drift.
 
 ## The charter's vocabulary
 
@@ -18,35 +20,40 @@ and when a component pull request is done.
 - The charter's last section lists what the checker cannot see (text written straight into
   markup, ids built from caller data, run-time durations, keyboard models, reduced motion).
   Review those by hand on every change.
-- The prior art is named in the charter (bits-ui, Melt UI, Radix, React Aria, shadcn-svelte).
-  When a rule is unclear, follow the charter's Do example, not a library's own docs.
+- When a rule is unclear, follow the charter's Do example, not a library's own docs.
 
 ## Where a component's files go
 
-A family is a folder `packages/svelte/src/lib/components/ui/<family>/`. Name new files after
-the component the way the family's existing files are named:
+A family is a folder `packages/svelte/src/lib/components/ui/<family>/`. Name new files the way
+the family's existing files are named (older families use lowercase, such as `button.svelte`):
 
-| File                                      | What                                                                                          |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `index.ts`                                | the public entry `<package>/<family>`: each component and its `<Name>Props` type (C-EXPORT-1) |
-| `<name>.svelte`                           | the component, `@component` plus one JSDoc sentence per prop (C-DOC-1)                        |
-| `<name>.test.ts` (+ `<name>.test.svelte`) | unit tests beside the component; a `.test.svelte` is a harness                                |
-| `<name>.stories.svelte`, `<name>.mdx`     | the Handbook page: the `writing-handbook-pages` skill                                         |
-| `<Name>.showcase.svelte`                  | the Atlas specimen: the `building-atlas-specimens` skill                                      |
+| File                                      | What                                                                                             |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `index.ts`                                | the entry `@aurora/svelte/<family>`: each component and its `<Name>Props` type (C-EXPORT-1)      |
+| `<Name>.svelte`                           | the component: `@component`, and a JSDoc sentence per prop the charter does not define (C-DOC-1) |
+| `<name>.test.ts` (+ `<name>.test.svelte`) | unit tests beside the component; a `.test.svelte` is a harness                                   |
+| `<Name>.stories.svelte`, `<Name>.mdx`     | the Handbook page: the `writing-handbook-pages` skill                                            |
+| `<Name>.showcase.svelte`                  | the Atlas specimen: the `building-atlas-specimens` skill                                         |
 
 The copyable example is `apps/docs/examples/<slug>.svelte` (the `writing-agent-ready-docs`
 skill). Browser specs that cross components (axe, keyboard plays, target size, reduced
 motion, forced colours) live in `apps/docs/tests/kit/`; add a spec there only for behaviour
 a story's `play` cannot prove.
 
-## The entry table
+## The entry table and the exports maps
 
-`scripts/aurora-entries.mjs` is the one definition of the public entries. A family is any
-folder under `FAMILY_ROOT` with an `index.ts` whose name does not start with `_`; a folder
-starting with `_` is a shared internal and never an entry. An entry under another name goes
-into `NAMED_ENTRIES`. The packages' `exports` maps, the ESLint entry rule, `kit:gen` and the
-checker all read this table: never write an export path by hand. Apps and the example
-files import only through an entry, never a deep path or a `.svelte` file.
+- `scripts/aurora-entries.mjs` is the one definition of the public entries. A family is any
+  folder under `FAMILY_ROOT` with an `index.ts` whose name does not start with `_`; a folder
+  starting with `_` is a shared internal and never an entry. An entry under another name goes
+  into `NAMED_ENTRIES`. The ESLint entry rule, `kit:gen` and the checker read this table.
+- The packages' `exports` and `publishConfig.exports` maps are **written** from it: after you
+  add, rename or remove a family or a named entry, run `node scripts/aurora-package.mjs` and
+  commit both `package.json` files. `--check` exits 1 on drift, and
+  `tests/unit/aurora-entries.test.ts` fails on an entry missing from either map. Never write an
+  export path by hand.
+- Apps, stories and example files import through the alias the docs app installs the package
+  under, `@aurora/svelte/<entry>` (`SVELTE_PKG` and `TOKENS_PKG` in the entry table), never the
+  published name from `packages/svelte/package.json`, a deep path or a `.svelte` file.
 
 ## Reading `kit:api`
 
@@ -71,14 +78,16 @@ bindables, rest, root facts, waivers). Both exit 0: use them to read, not to gat
 
 - Never add an entry and never raise a count. A new component meets the charter from its
   first commit.
-- When you fix a violation, lower its count in the same commit; at 0, delete the entry.
-  The unit test fails on a count above today's, so a fix without the baseline edit is red.
+- When you fix a violation, lower its count in the same commit; at 0, delete the entry
+  ([worked example](references/examples.md)). The unit test fails on a count above today's,
+  so a fix without the baseline edit is red.
 - Never run `kit:api --write-baseline` in a pull request: it exists to bootstrap the file.
 - A waiver (`<!-- kit-api-allow C-RESP-1: <reason> -->` on the line before) is only for a
   rule the charter marks waivable, names a reason, and is recorded in the baseline in the
   same pull request: it is a reviewed exception, not a way to get green.
-- Renaming or moving a component that has exceptions: move its entries to the new key, and
-  record `"renamed": { "<old key>": "<new key>" }` as the charter's last section says.
+- Renaming or moving a component that has exceptions: move its entries to the new key in the
+  baseline and in `population`, and record `"renamed": { "<old key>": "<new key>" }`. Delete
+  the `renamed` entry in a later change, once the base carries the new key.
 
 ## Definition of done
 
@@ -86,16 +95,19 @@ A component pull request is done when every line holds:
 
 1. `kit:api` exits 0 and the baseline did not grow; the `R-` rules the change touches were
    checked by hand (keyboard model, variant, disabled, handlers, theme hooks, motion).
-2. The Handbook page and the Atlas specimen are updated in the same pull request, the
-   example file type-checks, and `kit:gen` output agrees (`llm:check` exits 0).
+2. The Handbook page and the Atlas specimen are updated in the same pull request, the folder's
+   line is gone from `tests/unit/kit-story-coverage.allowlist.txt` and
+   `tests/unit/kit-showcase-coverage.allowlist.txt`, the example file type-checks, and
+   `kit:gen` output agrees (`llm:check` exits 0).
 3. Interactive components follow the WAI-ARIA Authoring Practices pattern for their role,
    list their keys on the page and prove them in a `Keyboard` story's `play` (R-KEYBOARD-1).
 4. axe passes on the page's stories, and the accessible name, role and state are right in
    the browser: axe finds only part of what fails.
 5. Every state renders in Light and Dark: default, hover, focus-visible, active, disabled,
-   invalid, loading, empty, long content.
-6. It works in a narrow and a wide container, through container queries, not viewport
-   breakpoints (C-RESP-1); logical start and end, not left and right (C-RTL-1).
+   invalid, loading, empty, long content, overflow.
+6. It works in every container from 320 to 1920 px wide, with no horizontal overflow at
+   320 px, through container queries, not viewport breakpoints (C-RESP-1); logical start
+   and end, not left and right (C-RTL-1). Targets grow to 44 px under `pointer-coarse:`.
 7. Reduced motion fades and nothing loops (R-MOTION-1); forced colours keep focus and
    state visible.
 8. The status stays Beta until the maintainer signs the look (R-LIFECYCLE-1).
@@ -107,17 +119,24 @@ A component pull request is done when every line holds:
 
 ```sh
 pnpm -C apps/docs kit:api                     # exit 0: the summary line, no problem lines
+node scripts/aurora-package.mjs --check       # the exports maps match the entry table
 pnpm test:fast packages/svelte/src/lib/components/ui/<family> \
-  tests/unit/kit-api-charter.test.ts tests/unit/kit-story-coverage.test.ts \
-  tests/unit/kit-showcase-coverage.test.ts
+  tests/unit/kit-api-charter.test.ts tests/unit/aurora-entries.test.ts \
+  tests/unit/kit-story-coverage.test.ts tests/unit/kit-showcase-coverage.test.ts
 pnpm -C apps/docs docs:check                  # blocks and example files type-check
 pnpm -C apps/docs llm:check
-pnpm -C apps/docs kit:build && pnpm -C apps/docs kit:test axe-stories keyboard-plays -g "<Title>" --workers=2
+pnpm -C apps/docs kit:build                   # kit:test serves this build: build first
+pnpm -C apps/docs kit:test axe-stories target-size -g "<Title> · " --workers=2
+pnpm -C apps/docs kit:test keyboard-plays -g "<docs-id-prefix>--" --workers=2
+pnpm -C apps/docs kit:test reduced-motion forced-colors --workers=2
 pnpm check && pnpm lint
 ```
 
-Green is every command exiting 0. Then open the Handbook page and the Atlas specimen at 390
-and 1440 px, Light and Dark, and use the component with the keyboard only.
+`<Title>` is the story title (`Components/Actions/Button`), `<docs-id-prefix>` its id form
+(`components-actions-button`): axe tests are named by title, keyboard tests by story id.
+Green is every command exiting 0 **and** each filtered run listing at least one test (the
+keyboard run for an interactive component; a filter that matches nothing exits 0 too). Then open the Handbook page and the Atlas specimen
+at 390 and 1440 px, Light and Dark, and use the component with the keyboard only.
 
 ## Sources
 
@@ -125,6 +144,7 @@ and 1440 px, Light and Dark, and use the component with the keyboard only.
   https://www.w3.org/WAI/ARIA/apg/patterns/
 - Automated checks find only part of the WCAG failures (manual testing stays required):
   https://www.w3.org/WAI/test-evaluate/tools/selecting/
+- Targets of 44 by 44 CSS px: https://www.w3.org/WAI/WCAG22/Understanding/target-size-enhanced
 - Container queries answer to an ancestor's size:
   https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_containment/Container_queries
 - Logical properties for direction-independent layout:

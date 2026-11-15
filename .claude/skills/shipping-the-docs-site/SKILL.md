@@ -28,7 +28,7 @@ never on one site served alone at its own root: base-path bugs exist only in the
   Never raise one to go green: find what grew first.
 - **Numbers come from the same method before and after**, written into the pull request.
 - **Upgrade the Storybook major in its own pull request, from a stable release, never a
-  beta.** The checklist is in [reference/storybook-major.md](reference/storybook-major.md).
+  beta.** The checklist is in [references/storybook-major.md](references/storybook-major.md).
 
 ## What a reader pays for
 
