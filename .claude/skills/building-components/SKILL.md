@@ -44,8 +44,8 @@ a story's `play` cannot prove.
 folder under `FAMILY_ROOT` with an `index.ts` whose name does not start with `_`; a folder
 starting with `_` is a shared internal and never an entry. An entry under another name goes
 into `NAMED_ENTRIES`. The packages' `exports` maps, the ESLint entry rule, `kit:gen` and the
-checker all read this table: never write an export path by hand. Apps, examples and
-specimen code import only through an entry, never a deep path or a `.svelte` file.
+checker all read this table: never write an export path by hand. Apps and the example
+files import only through an entry, never a deep path or a `.svelte` file.
 
 ## Reading `kit:api`
 
@@ -58,7 +58,7 @@ line. Exit 1 prints one line per problem:
 | `NEW`      | a violation the baseline does not allow: fix the component                         |
 | `NEW-COMP` | a component added after the baseline has a violation: fix it; it gets no exception |
 | `FIXED`    | you fixed one: lower the count in the baseline, or delete the entry at 0           |
-| `GROWN`    | the baseline holds more than its base: undo the raise                              |
+| `GROWN`    | (with `--base <ref>`) the baseline holds more than at the base: undo the raise     |
 | `GONE`     | a component left the public set: delete it from `population`                       |
 | `UNKNOWN`  | the baseline names a rule that does not exist                                      |
 | `WAIVER`   | an inline waiver is not recorded in the baseline                                   |
