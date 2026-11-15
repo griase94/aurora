@@ -22,7 +22,8 @@ and when a component pull request is done.
 
 ## Where a component's files go
 
-A family is a folder `packages/svelte/src/lib/components/ui/<family>/`:
+A family is a folder `packages/svelte/src/lib/components/ui/<family>/`. Name new files after
+the component the way the family's existing files are named:
 
 | File                                   | What                                                             |
 | -------------------------------------- | ---------------------------------------------------------------- |

@@ -5,4 +5,4 @@ timeout_seconds: 1200
 allowed_tools: [Read, Glob, Grep, Skill, Write, Edit, Bash]
 ---
 
-Let callers control whether the Popover is open. Add whatever props that needs.
+Let callers collapse and expand the Callout, and control whether it is open. Add whatever props that needs.
