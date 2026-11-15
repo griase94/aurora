@@ -89,13 +89,17 @@ or provenance.
 ## Measuring a performance change
 
 Same method before and after: build the base from the merge-base, at least 3 interleaved runs
-per side, report medians and ranges. On the wall, scroll down and back up at 1440 px and at
-390 px with 4x CPU throttling; record long tasks (count, total, max) and style recalculation.
-Run Chromium and WebKit: the Atlas ships to both. This repository's lab targets: no long task
-over 100 ms on the wall (a long task starts at 50 ms),
-INP at most 200 ms, CLS at most 0.1 (the Core Web Vitals thresholds, which Google defines on
-field data at the 75th percentile). A budget is re-anchored only
-with the measured value, the date and the reason in the script's comment.
+per side, report medians and ranges. The timed interaction is the wall scrolled down and back
+up, at 1440 px and at 390 px. Chromium gives the main numbers: long tasks (count, total, max,
+from a `longtask` PerformanceObserver) and style recalculation, with 4x CPU throttling at 390
+px (a CDP session's `Emulation.setCPUThrottlingRate`). WebKit has neither the Long Tasks API
+nor CPU throttling, so there record frame times (`requestAnimationFrame` deltas) over the
+same scroll, unthrottled, and compare the frames over 50 ms. No script in this repository does
+these runs yet: the first pull request that makes a performance claim adds one under
+`apps/docs/scripts/`. This repository's lab targets: no long task over 100 ms on the wall (a
+long task starts at 50 ms) and CLS at most 0.1 (a Core Web Vitals threshold, which Google
+defines on field data at the 75th percentile). A budget is re-anchored only with the
+measured value, the date and the reason in the script's comment.
 
 ## Check your work
 
@@ -124,5 +128,8 @@ Dark, and the wall scrolled down and up; the readout matches what you see.
 - Read, then write; avoid layout thrashing:
   https://web.dev/articles/avoid-large-complex-layouts-and-layout-thrashing
 - Long tasks over 50 ms block input: https://web.dev/articles/optimize-long-tasks
-- Core Web Vitals thresholds (INP 200 ms, CLS 0.1 at the 75th percentile):
-  https://web.dev/articles/vitals
+- Core Web Vitals thresholds (CLS 0.1 at the 75th percentile): https://web.dev/articles/vitals
+- Long Tasks API, Chromium only (`PerformanceLongTaskTiming`):
+  https://developer.mozilla.org/en-US/docs/Web/API/PerformanceLongTaskTiming
+- CPU throttling through the Chrome DevTools Protocol:
+  https://chromedevtools.github.io/devtools-protocol/tot/Emulation/#method-setCPUThrottlingRate

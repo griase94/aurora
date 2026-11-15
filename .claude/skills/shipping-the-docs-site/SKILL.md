@@ -62,10 +62,11 @@ never on one site served alone at its own root: base-path bugs exist only in the
 - Load: Lighthouse (`pnpm dlx lighthouse <url> --only-categories=performance`) with its
   default mobile throttling (simulated slow 4G: 150 ms RTT, 1.6 Mbps), cold, then warm with
   `--disable-storage-reset`; the Atlas home, an Atlas component page and a Handbook page;
-  LCP, CLS, request count, transferred bytes.
+  LCP, CLS, TBT, request count, transferred bytes.
 - This repository's lab targets, borrowed from the Core Web Vitals thresholds (which Google
   defines on field data at the 75th percentile): median LCP at most 2.5 s warm, CLS at most
-  0.1, INP at most 200 ms.
+  0.1. A navigation run has no interaction and so no INP; its lab proxy is TBT, recorded and
+  compared before and after, with no target of its own.
 - At least 3 runs per side, interleaved, medians and ranges: a single run hides stalls.
 
 ## Check your work
@@ -90,8 +91,9 @@ the production URL after the merge (or on a preview deployed by hand before it).
 - `storybook build --test` removes docs blocks, MDX entries, autodocs and docgen:
   https://storybook.js.org/docs/api/main-config/main-config-build
 - Story globs are analysed statically: https://storybook.js.org/docs/api/main-config/main-config-stories
-- Core Web Vitals thresholds (LCP 2.5 s, INP 200 ms, CLS 0.1 at the 75th percentile):
+- Core Web Vitals thresholds (LCP 2.5 s, CLS 0.1 at the 75th percentile):
   https://web.dev/articles/vitals
+- TBT as the lab proxy for INP, not a substitute for it: https://web.dev/articles/tbt
 - Lighthouse throttling, the slow 4G preset: https://github.com/GoogleChrome/lighthouse/blob/main/docs/throttling.md
 - Vercel `git.deploymentEnabled`:
   https://vercel.com/docs/project-configuration/git-configuration#git.deploymentenabled

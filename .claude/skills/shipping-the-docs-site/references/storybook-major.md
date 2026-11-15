@@ -9,11 +9,11 @@ migration guide first; the steps below are what this repository adds to it.
 1. The runtime meets the new major's minimums (for 11: Node 22.12 or later, TypeScript 5.9 or
    6, not 7.0, which has no API docgen can use, and `typescript` as a peer of the Svelte
    renderers). Upgrade TypeScript first and run `pnpm check`.
-2. No legacy Svelte CSF is left. This must print nothing:
-
-   ```sh
-   git grep -nE '<Meta[ >]|export const meta|<Template|legacyTemplate|let:args|let:context' -- '*.stories.svelte'
-   ```
+2. No legacy Svelte CSF is left: the first command of "Check your work" in
+   [writing-handbook-pages](../../writing-handbook-pages/SKILL.md) exits 0. Its pattern also
+   catches the `id`, `autodocs` and `source` props on `<Story>`, which 11 removes too. The
+   automigration only lists such stories and changes none of them, so migrate them before
+   the upgrade.
 
 3. No story file's `<script>` needs a preprocessor (a TypeScript `enum`, for example): 11
    indexes story files without preprocessors.
@@ -27,15 +27,21 @@ migration guide first; the steps below are what this repository adds to it.
    automigration: Svelte CSF moves from `@storybook/addon-svelte-csf` into the Svelte
    framework packages, so the import of `defineMeta` changes and the addon leaves every
    `package.json` and the `addons` list.
-2. Docgen: 11 generates Svelte docs on the server and deprecates the builder's `docgen`
+2. The automigration rewrites only story files and the Storybook config directory. In the
+   same pull request, change by hand every other file that names
+   `@storybook/addon-svelte-csf` (`git grep -l 'addon-svelte-csf' -- ':!*.stories.svelte'`):
+   the page template `apps/docs/src/lib/kit/templates/ComponentPage.template.md`, the import
+   rule in `writing-handbook-pages` and its `references/examples.md`, string fixtures in unit
+   tests, and the Sources of both skills.
+3. Docgen: 11 generates Svelte docs on the server and deprecates the builder's `docgen`
    option (removed in 12). Server docgen moves Aurora's props tables: `Snippet` props go to
    the slots category and callback props to the events category, both without a control,
    and props inherited from a whole attribute interface (`HTMLButtonAttributes`) are no
    longer listed. Compare the props tables against the baseline for exactly these: the props
    block, `kit.json` and Storybook's controls must still agree on every public prop.
-3. Re-run the budgets, the readiness gate and the composed build. A budget that moves is
+4. Re-run the budgets, the readiness gate and the composed build. A budget that moves is
    re-anchored only with the measured value, the date and the reason.
-4. Re-check the component manifest for Svelte: if the new major generates it, the decision
+5. Re-check the component manifest for Svelte: if the new major generates it, the decision
    not to ship a Storybook MCP docs toolset is reopened (see `writing-agent-ready-docs`).
 
 ## Done when
@@ -53,6 +59,7 @@ at 390 and 1440 px in Light and Dark with no console error.
 ## Sources
 
 - Storybook migration guide, "From version 10.x to 11.0.0" (required versions, Svelte CSF
-  built into the frameworks, legacy syntax removed, indexing without preprocessors, builder
+  built into the frameworks, other files that import the addon changed by hand, legacy syntax
+  removed and only listed by the automigration, indexing without preprocessors, builder
   docgen deprecated): https://github.com/storybookjs/storybook/blob/next/MIGRATION.md
 - Upgrading Storybook: https://storybook.js.org/docs/releases/upgrading
