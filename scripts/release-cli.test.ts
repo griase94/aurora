@@ -92,4 +92,14 @@ describe("release.mjs plan on a real history", () => {
       "version=0.0.3",
     );
   });
+
+  it("plans a release for a dry run and none for a dry run that assumes packages/ unchanged", () => {
+    const level = ["--level", "patch"];
+    expect(planAt(sha["C"] ?? "", "--dry-run", ...level)).toContain(
+      "release=true",
+    );
+    const out = planAt(sha["C"] ?? "", "--assume-packages-unchanged", ...level);
+    expect(out).toContain("release=false");
+    expect(out).toContain("nothing under packages/ changed since v0.0.2");
+  });
 });
