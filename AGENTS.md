@@ -44,7 +44,9 @@ that matches your task before you start:
 - Atlas specimens, stage, frames, wall: `building-atlas-specimens`
 - the docs site's build, caching, budgets, Storybook upgrades: `shipping-the-docs-site`
 
-These skills describe `apps/docs` and `packages/svelte`, which arrive with the kit import.
+These skills describe `apps/docs` and `packages/svelte`. Until the kit import brings those
+into this repository, their paths and commands do not resolve here; the skills guard starts
+checking them once `apps/docs` exists.
 A pull request that changes a convention updates its skill in the same pull request.
 
 ## Rules

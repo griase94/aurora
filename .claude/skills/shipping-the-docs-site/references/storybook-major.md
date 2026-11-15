@@ -7,8 +7,8 @@ migration guide first; the steps below are what this repository adds to it.
 ## Before the upgrade
 
 1. The runtime meets the new major's minimums (for 11: Node 22.12 or later, TypeScript 5.9 or
-   later, and `typescript` as a peer of the Svelte renderers). Upgrade TypeScript first and run
-   `pnpm check`.
+   6, not 7.0, which has no API docgen can use, and `typescript` as a peer of the Svelte
+   renderers). Upgrade TypeScript first and run `pnpm check`.
 2. No legacy Svelte CSF is left. This must print nothing:
 
    ```sh
@@ -28,8 +28,11 @@ migration guide first; the steps below are what this repository adds to it.
    framework packages, so the import of `defineMeta` changes and the addon leaves every
    `package.json` and the `addons` list.
 2. Docgen: 11 generates Svelte docs on the server and deprecates the builder's `docgen`
-   option (removed in 12). Compare the props tables against the baseline: the props block,
-   `kit.json` and Storybook's controls must still agree on every public prop.
+   option (removed in 12). Server docgen moves Aurora's props tables: `Snippet` props go to
+   the slots category and callback props to the events category, both without a control,
+   and props inherited from a whole attribute interface (`HTMLButtonAttributes`) are no
+   longer listed. Compare the props tables against the baseline for exactly these: the props
+   block, `kit.json` and Storybook's controls must still agree on every public prop.
 3. Re-run the budgets, the readiness gate and the composed build. A budget that moves is
    re-anchored only with the measured value, the date and the reason.
 4. Re-check the component manifest for Svelte: if the new major generates it, the decision

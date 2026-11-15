@@ -9,7 +9,7 @@ One static site: the Atlas at `/`, the Handbook at `/handbook/`, `llms.txt`, `ll
 and `kit.json` at both roots. `pnpm -C apps/docs site:atlas` is the deploy build
 (`vercel.json` `buildCommand`): public `kit:gen`, the Atlas build and `check-atlas-public`,
 the Handbook build, `site-compose.ts`, `check-handbook-ids.ts`, `check-site.ts`,
-`check-llm-readiness.ts` and the Handbook budgets. Prove a change on this composed output,
+`check-llm-readiness.ts` and the Handbook budgets. The scripts live in `apps/docs/scripts/`. Prove a change on this composed output,
 never on one site served alone at its own root: base-path bugs exist only in the composition.
 
 ## Rules
@@ -53,12 +53,19 @@ never on one site served alone at its own root: base-path bugs exist only in the
 ## Measuring delivery
 
 - Size: the budget scripts on a fresh build (raw bytes the browser parses).
-- Headers: on the deployed URL, never localhost (no compression, no headers there).
+- Headers: on a deployment, never localhost (no compression, no headers there).
   `node scripts/atlas-smoke-headers.mjs https://<deployment>` asks the host; a `source`
-  pattern that matches nothing is still valid JSON, so only the host proves a header.
-- Load: cold and warm, the Atlas home, an Atlas component page and a Handbook page; LCP, CLS,
-  request count, transferred bytes. Throttle the cold run (about 400 ms RTT, 1.6 Mbps).
-  Targets: LCP at most 2.5 s warm, CLS at most 0.1, INP at most 200 ms.
+  pattern that matches nothing is still valid JSON, so only the host proves a header. Only
+  `main` deploys (`git.deploymentEnabled` in `apps/docs/vercel.json`, and `ignoreCommand` may
+  skip a build): a pull request has no deployment, so run the smoke check against the
+  production URL after the merge, or against a preview you deploy by hand.
+- Load: Lighthouse (`pnpm dlx lighthouse <url> --only-categories=performance`) with its
+  default mobile throttling (simulated slow 4G: 150 ms RTT, 1.6 Mbps), cold, then warm with
+  `--disable-storage-reset`; the Atlas home, an Atlas component page and a Handbook page;
+  LCP, CLS, request count, transferred bytes.
+- This repository's lab targets, borrowed from the Core Web Vitals thresholds (which Google
+  defines on field data at the 75th percentile): median LCP at most 2.5 s warm, CLS at most
+  0.1, INP at most 200 ms.
 - At least 3 runs per side, interleaved, medians and ranges: a single run hides stalls.
 
 ## Check your work
@@ -71,7 +78,7 @@ node scripts/atlas-smoke-headers.mjs https://<deployment>         # after a head
 ```
 
 Green is every command exiting 0. A header change is done only when the smoke check passes on
-the deployment.
+the production URL after the merge (or on a preview deployed by hand before it).
 
 ## Sources
 
@@ -85,5 +92,8 @@ the deployment.
 - Story globs are analysed statically: https://storybook.js.org/docs/api/main-config/main-config-stories
 - Core Web Vitals thresholds (LCP 2.5 s, INP 200 ms, CLS 0.1 at the 75th percentile):
   https://web.dev/articles/vitals
+- Lighthouse throttling, the slow 4G preset: https://github.com/GoogleChrome/lighthouse/blob/main/docs/throttling.md
+- Vercel `git.deploymentEnabled`:
+  https://vercel.com/docs/project-configuration/git-configuration#git.deploymentenabled
 - Fonts: preload what the first paint needs and avoid inlined font data:
   https://web.dev/articles/font-best-practices

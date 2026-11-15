@@ -15,19 +15,21 @@ or provenance.
 - **Showroom content only in the public build.** Maintainer content (git history, review
   findings, caller counts, decision codes) renders only when `KIT_PUBLIC` is unset; the public
   build swaps the modules that carry it for empty stand-ins (`publicStubs` in
-  `showcase/vite.config.ts`), and `apps/docs/scripts/check-atlas-public.mjs` proves it on the
+  `apps/docs/src/lib/kit/showcase/vite.config.ts`), and `apps/docs/scripts/check-atlas-public.mjs` proves it on the
   built files. A new maintainer-only module gets a stand-in, or the check fails.
 - **Status reads Stable, Beta or Deprecated**, the same words as the Handbook (`publicStatus`
-  in `showcase/status-vocab.ts`, mapped onto `status-ladder.ts`).
+  in `apps/docs/src/lib/kit/showcase/status-vocab.ts`, mapped onto
+  `apps/docs/src/lib/kit/status-ladder.ts`).
 - **True size or say so.** A frame shows at 100 % whenever it fits; otherwise it scales, never
-  below `MIN_SCALE` (0.75, `stage/frame-size.ts`), and the readout states the scale. When even
+  below `MIN_SCALE` (0.75, in `frame-size.ts` under `apps/docs/src/lib/kit/showcase/stage/`), and the readout states the scale. When even
   that does not fit, fall back (stack Light above Dark, show 390 instead of 768) and say so in
   the readout. Text at half size reads as broken.
 - **A control never moves what the reader is looking at.** Toggling a viewport, the Light |
   Dark split, zoom or a tool keeps the stage, its scale and the panel in place.
-- **Frames are dumb.** A stage frame boots `frame.html` (`frame-main.ts`), not the Atlas app:
-  no shell, no sidebar, no strings. Theme, brand and zoom arrive from the page by message; a
-  hotkey pressed inside the frame is sent to the page (`sc:key`), never handled there.
+- **Frames are dumb.** A stage frame boots `apps/docs/src/lib/kit/showcase/frame.html`
+  (`frame-main.ts` beside it), not the Atlas app: no shell, no sidebar, no strings. Theme,
+  brand and zoom arrive from the page by message; a hotkey pressed inside the frame is sent
+  to the page (`sc:key`), never handled there.
 - **Pay only for what is on screen.** Mount specimens near the viewport, load page code on
   intent, keep dev-only tools out of production chunks. `check-atlas-budgets.mjs` holds the
   initial JS, Atlas's CSS share, the frame entry and the single-file build.
@@ -35,7 +37,9 @@ or provenance.
 ## Writing a specimen
 
 - File: `<Name>.showcase.svelte` beside the component, exporting `entry: ShowcaseEntry` from
-  `<script module>` (the contract is `apps/docs/src/lib/kit/showcase/contract.ts`).
+  `<script module>` (the contract is `apps/docs/src/lib/kit/showcase/contract.ts`). Start from
+  the skeleton in [references/examples.md](references/examples.md); the full exemplar is
+  `packages/svelte/src/lib/components/ui/button/Button.showcase.svelte`.
 - Enumerate controls from what the component exports (`BUTTON_VARIANTS`, the variant table
   with `fromTv`), never a retyped list, never deprecated aliases.
 - `code(args)` returns the markup a reader copies; the import line is built for it from the
@@ -53,26 +57,29 @@ or provenance.
 - Use an iframe whenever viewport behaviour matters: inside it, media queries, `vw`/`dvh` and
   `position: fixed` answer to the frame. An inline box emulates width only through container
   queries, and any `@media` in the component then answers to the browser window.
-- Sizing rules live in `stage/frame-size.ts` and `stage/layout.ts`, shared by the runtime and
+- Sizing rules live in `frame-size.ts` and `layout.ts` under
+  `apps/docs/src/lib/kit/showcase/stage/`, shared by the runtime and
   `tests/unit/atlas-frame-size.test.ts`. A fit frame's height follows its specimen within
   `FIT_MIN`..`FIT_MAX`; a page or shell frame has a device's natural height and never follows
   what its content reports (a `min-h-dvh` shell would grow itself).
 - Write each Tailwind class whole, in a table keyed by its threshold. A class assembled from
   parts (`` `@[${n}px]:flex` ``) is never generated: Tailwind scans source text for literal
   class names.
-- Messages go through the typed unions in `frame/channel.ts`. The runtime allow-lists are
+- Messages go through the typed unions in `apps/docs/src/lib/kit/showcase/frame/channel.ts`. The runtime allow-lists are
   records `satisfies Record<…Type, 1>`, so a new message that is not allowed fails
   `pnpm check` instead of being dropped silently.
 - Show the skeleton until the frame reports `sc:shown`; never a blank device.
 
 ## Runtime and performance
 
-- Batch the mounts that are due into one flush per animation frame (`wall/work.ts`): N mounts
+- Batch the mounts that are due into one flush per animation frame
+  (`apps/docs/src/lib/kit/showcase/wall/work.ts`): N mounts
   in one flush cost one style recalculation, one mount per task pays it N times.
 - Drop far specimens only when the specimens exceed their element budget, never on distance
   alone: a reader scrolling back up would pay every mount again.
 - Keep broad `:has()` selectors (`html:has(…)`, `.a .b:has(…) > *`) out of component and site
-  CSS: each DOM insertion can then restyle the whole document. Use a data attribute the
+  CSS: the browser re-checks a `:has()` on DOM changes inside its anchor, so a broad one
+  turns each insertion into a restyle of the whole document. Use a data attribute the
   component sets. Measure before relying on `content-visibility: auto`.
 - Read layout once and write in `requestAnimationFrame`; never read layout in a pointer or
   scroll handler.
@@ -84,8 +91,10 @@ or provenance.
 Same method before and after: build the base from the merge-base, at least 3 interleaved runs
 per side, report medians and ranges. On the wall, scroll down and back up at 1440 px and at
 390 px with 4x CPU throttling; record long tasks (count, total, max) and style recalculation.
-Run Chromium and WebKit: they load lazy iframes at different distances. Targets: no long task
-over 100 ms on the wall, INP at most 200 ms, CLS at most 0.1. A budget is re-anchored only
+Run Chromium and WebKit: the Atlas ships to both. This repository's lab targets: no long task
+over 100 ms on the wall (a long task starts at 50 ms),
+INP at most 200 ms, CLS at most 0.1 (the Core Web Vitals thresholds, which Google defines on
+field data at the 75th percentile). A budget is re-anchored only
 with the measured value, the date and the reason in the script's comment.
 
 ## Check your work
@@ -95,7 +104,7 @@ pnpm test:fast tests/unit/atlas-frame-size.test.ts tests/unit/kit-showcase-cover
   tests/unit/kit-showcase-template.test.ts tests/unit/atlas-status-vocab.test.ts
 pnpm -C apps/docs showcase:build && pnpm -C apps/docs showcase:single && pnpm -C apps/docs showcase:budgets
 pnpm -C apps/docs showcase:public           # public build plus check-atlas-public
-ATLAS_PORT=<free port> pnpm -C apps/docs test:atlas tests/atlas/stage-frames.spec.ts --workers=2
+ATLAS_PORT=<free port> pnpm -C apps/docs test:atlas stage-frames --workers=2
 ```
 
 Green is every command exiting 0 (the budgets script fails on a missing build, so build both
@@ -109,6 +118,8 @@ Dark, and the wall scrolled down and up; the readout matches what you see.
 - Tailwind detects only complete class names in source:
   https://tailwindcss.com/docs/detecting-classes-in-source-files
 - Lazy-loading offscreen iframes: https://web.dev/articles/iframe-lazy-loading
+- How Blink invalidates styles when `:has()` is in use, and how a narrow selector avoids it:
+  https://blogs.igalia.com/blee/posts/2023/05/31/how-blink-invalidates-styles-when-has-in-use.html
 - `content-visibility`: https://web.dev/articles/content-visibility
 - Read, then write; avoid layout thrashing:
   https://web.dev/articles/avoid-large-complex-layouts-and-layout-thrashing

@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: new-family
+expected_outcome: |
+  Starts from the charter's Reference component, adds the family folder with index.ts, regenerates both exports maps with scripts/aurora-package.mjs instead of writing them by hand, imports through @aurora/svelte/<family>, adds the page and specimen, and removes the folder's coverage allowlist lines.

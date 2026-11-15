@@ -42,7 +42,7 @@ The shape in a few lines, a story and the chapter that embeds it, is in
   read the component; an `argTypes` description is a second copy that drifts.
 - **Reach the docs app through aliases** (`$kit/...`, `$kit-blocks`), never `../../..`.
 - **Link between pages by docs id.** In MDX, a relative `?path=/docs/<docs-id>` link
-  (`check-site.ts` verifies it against the index); never a root-absolute `/?path=`, which
+  (`apps/docs/scripts/check-site.ts` verifies it against the index); never a root-absolute `/?path=`, which
   leaves `/handbook/` for the Atlas. A Svelte block links with `docsHref()` / `storyHref()`
   from `apps/docs/src/lib/kit/handbuch/links.ts`, which opens the page outside the preview
   frame.
@@ -90,8 +90,8 @@ The shape in a few lines, a story and the chapter that embeds it, is in
 - Titles are ASCII English `Components/<Family>/<Name>`, the family the Atlas files it under
   (`apps/docs/src/lib/kit/taxonomy.ts`). Roots: Start, Foundations, Components, Patterns,
   Workshop (internal build only). The title becomes the docs id
-  (`components-actions-button--docs`); a rename adds a row to `.storybook/legacy-ids.ts`.
-- `parameters.options.storySort` stays an inline, self-contained function in `preview.ts`:
+  (`components-actions-button--docs`); a rename adds a row to `apps/docs/.storybook/legacy-ids.ts`.
+- `parameters.options.storySort` stays an inline, self-contained function in `apps/docs/.storybook/preview.ts`:
   Storybook parses that file statically, and a named constant is a build error.
 - The public build (`KIT_PUBLIC=1`) shows chapters 01 to 11 only. File paths with line numbers,
   PR numbers, dates, people and decision codes go inside `<KitMaintainer>` or
