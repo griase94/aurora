@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: new-prop
+expected_outcome: |
+  Adds open/onOpenChange per the charter, a JSDoc sentence, updates the Handbook page and the Atlas specimen in the same change, and runs kit:api.
