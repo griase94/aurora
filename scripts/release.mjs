@@ -8,10 +8,12 @@
  *       the version after the latest v* tag
  *   release.mjs prs   --head <sha> --repo <owner/repo> --out prs.json
  *       the merged pull requests since the latest tag (GitHub API through gh)
- *   release.mjs plan  --head <sha> --prs prs.json [--allow-1.0] [--level <l>] [--dry-run]
+ *   release.mjs plan  --head <sha> --prs prs.json [--allow-1.0] [--level <l>] [--dry-run | --assume-packages-unchanged]
  *       release=true|false, version, tag, prerelease, reason as key=value lines;
  *       --level overrides the labels (a release run by hand), --dry-run plans
- *       as if packages/ had changed (the pull request check of this workflow).
+ *       as if packages/ had changed (the pull request check of this workflow),
+ *       --assume-packages-unchanged as if nothing under packages/ had (the
+ *       pull request check of the path that plans no release).
  *       Exits 1 when packages/ changed but no merged pull request asks for a
  *       release: that change would otherwise sit unreleased without a sign.
  *   release.mjs apply --version <x.y.z> --repository <owner/repo>
@@ -485,8 +487,9 @@ function cmdPlan(args) {
     tags,
     head,
     prs: readPrs(required(args, "--prs")),
-    packagesChanged:
-      args.includes("--dry-run") || packagesChangedSince(last, head),
+    packagesChanged: args.includes("--assume-packages-unchanged")
+      ? false
+      : args.includes("--dry-run") || packagesChangedSince(last, head),
     headAfterLast: isAfter(last, head),
     allow1: args.includes("--allow-1.0"),
     level: flag(args, "--level") || undefined,

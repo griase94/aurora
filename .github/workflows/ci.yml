@@ -53,7 +53,7 @@ jobs:
             echo "foundations=$(touches '^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc|\.nvmrc)$')"
             echo "tooling=$(touches '^(scripts/|\.github/)')"
             echo "workflows=$(touches '^\.github/(workflows|actions)/')"
-            echo "release=$(touches '^(\.github/workflows/release(-build)?\.yml|scripts/(release|pack|consumer-smoke)\.mjs|scripts/(lib|consumer)/)')"
+            echo "release=$(touches '^(\.github/workflows/release(-build)?\.yml|scripts/(release|pack|consumer-smoke)\.mjs|scripts/(lib|consumer)/|\.github/workflows/ci\.yml|\.github/actions/)')"
             if [ -f apps/docs/package.json ]; then echo "has_docs=true"; else echo "has_docs=false"; fi
           } | tee -a "$GITHUB_OUTPUT"
 
@@ -152,6 +152,21 @@ jobs:
     with:
       dry_run: true
 
+  # The same workflow on the path of a push that plans no release (most merges
+  # of docs and tooling): the plan must say "no release" and the job must end
+  # green with the install, build and pack skipped.
+  release-dry-run-no-release:
+    name: release dry run, no release
+    needs: changes
+    if: needs.changes.outputs.release == 'true'
+    uses: ./.github/workflows/release-build.yml
+    permissions:
+      contents: read
+      pull-requests: read
+    with:
+      dry_run: true
+      dry_run_no_release: true
+
   # Slots the kit import fills. They stay off until apps/docs exists; once it
   # does, each fails until its real body replaces the placeholder, so no slot
   # can pass by accident.
@@ -194,7 +209,18 @@ jobs:
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [changes, static, unit, pack, release-dry-run, kit, atlas, site]
+    needs:
+      [
+        changes,
+        static,
+        unit,
+        pack,
+        release-dry-run,
+        release-dry-run-no-release,
+        kit,
+        atlas,
+        site,
+      ]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
