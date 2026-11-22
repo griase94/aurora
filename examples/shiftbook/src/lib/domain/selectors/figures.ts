@@ -3,7 +3,7 @@
  * figure; an area that has not answered yet gives `null`, and the screen shows
  * a figure only when it is not `null`.
  */
-import { periodOfShift } from "../periods.ts";
+import { periodById, periodOfShift } from "../periods.ts";
 import { minutesBetween } from "../time.ts";
 import type {
   Instant,
@@ -30,7 +30,7 @@ export function periodSummary(
   periodId: PeriodId,
   now: Instant,
 ): PeriodSummary {
-  const period = state.periods[periodId];
+  const period = periodById(state, periodId);
   let hours = 0;
   if (period) {
     for (const shift of Object.values(state.shifts)) {

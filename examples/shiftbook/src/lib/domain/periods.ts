@@ -111,13 +111,41 @@ export function newPeriod(range: PeriodRange): Period {
   };
 }
 
-/** The period record a shift falls in, if the world holds it. */
-export function periodRecordOfShift(
+/**
+ * The record of a period: the stored one, or a fresh record when nothing was
+ * requested, closed or reopened yet. Only the seed and the period commands
+ * store records, so a period the clock has just entered has none; it is still
+ * a period.
+ */
+export function periodRecord(state: WorldState, range: PeriodRange): Period {
+  return state.periods[range.start as PeriodId] ?? newPeriod(range);
+}
+
+/**
+ * The period whose id is `id`, if `id` is a period start for the tenant's
+ * start day. Any other string, including a date inside a period, is no period.
+ */
+export function periodById(
   state: WorldState,
-  shift: Shift,
+  id: PeriodId,
 ): Period | undefined {
+  if (state.periods[id]) return state.periods[id];
+  let range: PeriodRange;
+  try {
+    range = periodContaining(id, state.settings.periodStartDay);
+  } catch (e) {
+    if (e instanceof RangeError) return undefined;
+    throw e;
+  }
+  return range.start === id ? newPeriod(range) : undefined;
+}
+
+/** The period record a shift falls in; always one, stored or fresh. */
+export function periodRecordOfShift(state: WorldState, shift: Shift): Period {
   const zone =
     state.locations[shift.locationId]?.timeZone ?? state.settings.timeZone;
-  const range = periodOfShift(shift, zone, state.settings.periodStartDay);
-  return state.periods[range.start as PeriodId];
+  return periodRecord(
+    state,
+    periodOfShift(shift, zone, state.settings.periodStartDay),
+  );
 }

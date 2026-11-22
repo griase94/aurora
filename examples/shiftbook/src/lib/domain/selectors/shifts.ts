@@ -71,7 +71,7 @@ export const openTooLongIssues: IssueSource = (state, now) =>
         since: o.shift.begin,
         personId: o.person.id,
         locationId: o.shift.locationId,
-        ...(period ? { periodId: period.id } : {}),
+        periodId: period.id,
         fix: {
           screen: "shifts",
           query: { state: "open" },

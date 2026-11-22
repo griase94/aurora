@@ -153,14 +153,15 @@ Selectors are pure functions of the world (and `now` where time matters), one fi
 `selectors/index.ts`. `issues` is the one place that knows what is wrong: it asks every area's source and orders
 the result.
 
-| Rule                                                                                                 | Proven by                                   |
-| ---------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| A shift open past the threshold blocks its period, with the fix                                      | `issues.test.ts › issues: open_too_long`    |
-| Blockers first, then the oldest first, then by id                                                    | `issues.test.ts › issues: the order`        |
-| Every kind's source is asked                                                                         | `issues.test.ts › asks every kind's source` |
-| `periodSummary` adds the recorded minutes and counts who is at work; areas not built answer `null`   | `issues.test.ts › periodSummary`            |
-| Every domain state and every issue kind has a face and a message key; the normal states have no pill | `issues.test.ts › faces…`                   |
-| Every selector area has its file and the index re-exports it                                         | `registries.test.ts`                        |
+| Rule                                                                                                             | Proven by                                                                                                  |
+| ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| A shift open past the threshold blocks its period, with the fix                                                  | `issues.test.ts › issues: open_too_long`                                                                   |
+| Blockers first, then the oldest first, then by id                                                                | `issues.test.ts › issues: the order`                                                                       |
+| Every kind's source is asked                                                                                     | `issues.test.ts › asks every kind's source`                                                                |
+| `periodSummary` adds the recorded minutes and counts who is at work; areas not built answer `null`               | `issues.test.ts › periodSummary`                                                                           |
+| A period the clock has entered is a period without a stored record: it counts its shifts and names its open ones | `issues.test.ts › periodSummary › after the clock passes…`, `…an open shift in a period without a record…` |
+| Every domain state and every issue kind has a face and a message key; the normal states have no pill             | `issues.test.ts › faces…`                                                                                  |
+| Every selector area has its file and the index re-exports it                                                     | `registries.test.ts`                                                                                       |
 
 ## The seeded world
 
