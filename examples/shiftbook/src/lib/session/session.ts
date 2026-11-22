@@ -249,14 +249,34 @@ export function createSession(o: SessionOptions): Session {
     start: SCENARIOS.evening.instant,
     nowMs: realNow,
     onChange: (change) =>
-      void updateMeta((m, realMs) => ({
+      updateMeta((m, realMs) => ({
         ...m,
         clock: change(m.clock, m.startedAtMs, realMs),
-      })),
+      })).catch(() => {
+        // The change was not stored: show the stored clock again, the one
+        // every other tab and the next commit use.
+        readBack();
+        notify();
+      }),
   });
   unsubscribe.push(clock.subscribe(notify));
 
   const entry = (): TenantMeta | undefined => meta?.tenants[tenantId];
+
+  /** Takes the stored meta again, if it can be read; after a write that failed. */
+  function readBack() {
+    try {
+      const read = store.readMeta();
+      if (read.kind === "ok") adoptMeta(read.meta);
+    } catch {
+      // Unreadable too: this tab keeps what it shows until the next read.
+    }
+  }
+
+  /** Runs a background read; a failure waits for the next message, visibility change or commit. */
+  const background = (run: () => Promise<void>) => {
+    run().catch(() => undefined);
+  };
   const prefs = (): SessionPrefs => meta?.prefs ?? {};
 
   /**
@@ -418,7 +438,7 @@ export function createSession(o: SessionOptions): Session {
     const e = entry();
     // The entry is gone when another tenant's tab reset or cleared the session.
     if (!meta || !e) {
-      void restore();
+      background(restore);
       return;
     }
     const head = store.readHead(tenantId);
@@ -429,7 +449,7 @@ export function createSession(o: SessionOptions): Session {
     if (base === pos && envelopes.length === 0) return;
     const next = fold(base, envelopes);
     if (!next) {
-      void resync();
+      background(resync);
       return;
     }
     const reseeded = base !== pos;
@@ -441,13 +461,19 @@ export function createSession(o: SessionOptions): Session {
   /** Re-reads the store after another tab's message or when the page shows again. */
   function syncFromStore() {
     if (destroyed || !restored) return;
-    const read = store.readMeta();
-    if (read.kind !== "ok" || realNow() - read.meta.startedAtMs > EXPIRY_MS) {
-      void restore();
-      return;
+    try {
+      const read = store.readMeta();
+      if (read.kind !== "ok" || realNow() - read.meta.startedAtMs > EXPIRY_MS) {
+        background(restore);
+        return;
+      }
+      adoptMeta(read.meta);
+      catchUp();
+    } catch {
+      // A read that throws (blocked storage) runs inside a channel or
+      // visibility callback: read everything again, inside the lock.
+      background(resync);
     }
-    adoptMeta(read.meta);
-    catchUp();
     notify();
   }
 
@@ -506,13 +532,19 @@ export function createSession(o: SessionOptions): Session {
           tx.writeMeta(next);
           return next;
         })
-        .then((cleared) => {
-          if (cleared) {
-            adoptMeta(cleared);
-            announce();
-          }
-          if (token === loadToken) setLoad(cleared ? "error" : "ready");
-        });
+        .then(
+          (cleared) => {
+            if (cleared) {
+              adoptMeta(cleared);
+              announce();
+            }
+            if (token === loadToken) setLoad(cleared ? "error" : "ready");
+          },
+          // The storage refused: the load failed like one over a network.
+          () => {
+            if (token === loadToken) setLoad("error");
+          },
+        );
     }, latencyMs);
   }
 
@@ -671,7 +703,7 @@ export function createSession(o: SessionOptions): Session {
     } catch {
       // The storage refused (quota, a blocked origin, a lock error). Nothing
       // was appended that the next read would not fold; read everything again.
-      resync().catch(() => undefined);
+      background(resync);
       return UNAVAILABLE("storage");
     }
     const before = pos;

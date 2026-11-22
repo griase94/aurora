@@ -844,6 +844,102 @@ describe("session: storage that fails or vanishes", () => {
   });
 });
 
+describe("session: the background paths reject nowhere", () => {
+  /** Makes every write of `storage` throw until the returned function is called. */
+  const breakWrites = (storage: MemoryStorage) => {
+    const write = storage.setItem.bind(storage);
+    storage.setItem = () => {
+      throw new Error("QuotaExceededError");
+    };
+    return () => {
+      storage.setItem = write;
+    };
+  };
+  /** Collects the unhandled rejections while `fn` runs. */
+  async function unhandled(fn: () => Promise<void>): Promise<unknown[]> {
+    const seen: unknown[] = [];
+    const on = (e: unknown) => seen.push(e);
+    process.on("unhandledRejection", on);
+    try {
+      await fn();
+      await new Promise((r) => setImmediate(r));
+    } finally {
+      process.off("unhandledRejection", on);
+    }
+    return seen;
+  }
+
+  it("a load whose storage throws ends in `error`, never stays `loading`", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const o = origin();
+    const s = await restored(o.tab());
+    await s.setPrefs({ latencyMs: 100, failNextLoad: true });
+    const heal = breakWrites(o.storage);
+    const seen = await unhandled(async () => {
+      s.load.reload();
+      await vi.advanceTimersByTimeAsync(500);
+      await settle();
+    });
+    heal();
+    expect(seen).toEqual([]);
+    expect(s.load.status).toBe("error");
+  });
+
+  it("a clock change whose stored write throws shows the stored clock again, the one every tab and commit uses", async () => {
+    const o = origin();
+    const a = await restored(o.tab());
+    const b = await restored(o.tab());
+    const heal = breakWrites(o.storage);
+    const seen = await unhandled(async () => {
+      a.clock.advance(120);
+      await settle();
+    });
+    heal();
+    expect(seen).toEqual([]);
+    expect(a.clock.instant).toBe(b.clock.instant);
+    const out = await a.dispatchAs(KIOSK, stamp(badges()[0]!.code));
+    expect(out.ok && out.result).toMatchObject({ at: a.clock.instant });
+  });
+
+  it("a tab that finds the stored session gone while the storage throws rejects nowhere, and recovers on the next read", async () => {
+    const o = origin();
+    const page = createVisibilitySwitch(true);
+    const a = await restored(o.tab({ visibility: page }));
+    await a.dispatchAs(KIOSK, stamp(badges()[0]!.code));
+    wipe(o.storage);
+    const heal = breakWrites(o.storage);
+    const seen = await unhandled(async () => {
+      page.set(false);
+      page.set(true);
+      await settle();
+    });
+    heal();
+    expect(seen).toEqual([]);
+    page.set(false);
+    page.set(true);
+    await settle();
+    expect((await a.dispatchAs(KIOSK, stamp(badges()[1]!.code))).ok).toBe(true);
+  });
+
+  it("a fold that fails while the storage throws rejects nowhere", async () => {
+    const o = origin();
+    const a = await restored(o.tab());
+    const b = await restored(o.tab());
+    o.bus.mode = "hold";
+    await a.dispatchAs(KIOSK, stamp(badges()[0]!.code));
+    o.storage.setItem(KEYS.log("kranich", 0, 1), "{not json");
+    const heal = breakWrites(o.storage);
+    const seen = await unhandled(async () => {
+      o.bus.mode = "deliver";
+      o.bus.flush();
+      await settle();
+    });
+    heal();
+    expect(seen).toEqual([]);
+    expect(b.world).toBe(seedWorld("kranich", "evening"));
+  });
+});
+
 describe("session: two tenants on one origin", () => {
   it("a reset in one tenant's tab starts the other tenant's open tab over too", async () => {
     const o = origin();
