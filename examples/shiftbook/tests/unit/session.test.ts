@@ -663,6 +663,19 @@ describe("clock", () => {
     expect(env.at).toBe("2026-11-20T19:42:00Z");
   });
 
+  it("when the device's real time steps back, the next commit is stored no earlier than the last one", async () => {
+    const o = origin();
+    const a = await restored(o.tab());
+    const [x, y] = badges();
+    o.time.ms += 10 * MINUTE;
+    await a.dispatchAs(KIOSK, stamp(x!.code));
+    o.time.ms -= 5 * MINUTE;
+    await a.dispatchAs(KIOSK, stamp(y!.code));
+    const ats = storedInstants(o.storage);
+    expect(ats).toEqual([ats[0], ats[0]]);
+    expect(ats[0]).toBe("2026-11-20T17:52:00Z");
+  });
+
   it("the minute tick stops while the page is hidden", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const o = origin();

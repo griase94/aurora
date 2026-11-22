@@ -42,7 +42,7 @@ import {
   type StoreTx,
   type TenantMeta,
 } from "./store.ts";
-import { toMinuteInstant } from "../domain/time.ts";
+import { instantMs, toMinuteInstant } from "../domain/time.ts";
 import { ALWAYS_VISIBLE, type Visibility } from "./visibility.ts";
 
 export type LoadStatus = "ready" | "loading" | "error";
@@ -644,13 +644,22 @@ export function createSession(o: SessionOptions): Session {
     if (caught.seq >= LOG_CAP)
       return { ...ens, pos: caught, outcome: UNAVAILABLE("log full") };
 
+    // The device's real time can step back (a manual change, a time sync);
+    // the log's instants never do: no earlier than the last envelope's.
+    const last =
+      caught.seq > 0
+        ? tx.readLog(tenantId, caught.epoch, caught.seq - 1)[0]
+        : undefined;
     const at = toMinuteInstant(
-      scenarioMs(
-        SCENARIOS[e.scenario].instant,
-        m.clock,
-        m.startedAtMs,
-        realMs,
-        e.clockBaseMinutes ?? 0,
+      Math.max(
+        scenarioMs(
+          SCENARIOS[e.scenario].instant,
+          m.clock,
+          m.startedAtMs,
+          realMs,
+          e.clockBaseMinutes ?? 0,
+        ),
+        last && last.seq === caught.seq ? instantMs(last.at) : -Infinity,
       ),
     );
     const seq = caught.seq + 1;
