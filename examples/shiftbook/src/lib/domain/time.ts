@@ -31,14 +31,22 @@ export function toMinuteInstant(epochMs: number): Instant {
   return new Date(ms).toISOString().replace(/:\d\d\.\d{3}Z$/, ":00Z");
 }
 
-/** An instant's milliseconds since the epoch. */
+/**
+ * The one shape an instant has: UTC, with its `Z`. A string without a zone
+ * would be read in the host's zone, so it is no instant.
+ */
+const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?Z$/;
+
+/** An instant's milliseconds since the epoch; any other shape is a `RangeError`. */
 export function instantMs(i: Instant): number {
+  if (typeof i !== "string" || !INSTANT.test(i))
+    throw new RangeError(`not an instant: ${String(i)}`);
   const ms = Date.parse(i);
   if (Number.isNaN(ms)) throw new RangeError(`not an instant: ${i}`);
   return ms;
 }
 
-/** Truncates any ISO instant to its minute. */
+/** Truncates an instant to its minute. */
 export function truncate(i: Instant): Instant {
   return toMinuteInstant(instantMs(i));
 }

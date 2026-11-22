@@ -122,18 +122,19 @@ Shifts are instants; a branch has an IANA zone; wall times exist only where a pe
 implementation runs on `@internationalized/date` behind `src/lib/domain/time.ts` (ledger row G-018) until the kit's
 date engine has instants.
 
-| Rule                                                                                              | Proven by                                                               |
-| ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| The runtime's zone data has the 2026 transitions of Berlin and Helsinki (checked before any rule) | `time.test.ts › the runtime's time-zone data`                           |
-| A night shift over the autumn change lasts 8 h and includes the change (+1 h)                     | `time.test.ts › the time table › a night shift over the autumn change…` |
-| A night shift over the spring change lasts 6 h and includes the change (−1 h)                     | `time.test.ts › a night shift over the spring change…`                  |
-| In 02:50 summer time, out 02:10 winter time is 20 minutes with two offsets                        | `time.test.ts › a scan in the repeated hour…`                           |
-| A wall time in the spring gap is refused with the time an hour later as a suggestion              | `time.test.ts › a wall time typed into the spring gap…`                 |
-| A wall time in the repeated hour offers both instants and picks neither                           | `time.test.ts › a wall time typed into the repeated hour…`              |
-| Another branch changes by its own zone                                                            | `time.test.ts › the same night in Helsinki…`                            |
-| A shift over midnight counts for the day of its begin                                             | `time.test.ts › a shift over midnight…`                                 |
-| Each branch's time in its own zone                                                                | `time.test.ts › a branch in another zone…`                              |
-| Nothing reads the device's zone                                                                   | `time.test.ts › a device far away`                                      |
+| Rule                                                                                                    | Proven by                                                               |
+| ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| The runtime's zone data has the 2026 transitions of Berlin and Helsinki (checked before any rule)       | `time.test.ts › the runtime's time-zone data`                           |
+| A night shift over the autumn change lasts 8 h and includes the change (+1 h)                           | `time.test.ts › the time table › a night shift over the autumn change…` |
+| A night shift over the spring change lasts 6 h and includes the change (−1 h)                           | `time.test.ts › a night shift over the spring change…`                  |
+| In 02:50 summer time, out 02:10 winter time is 20 minutes with two offsets                              | `time.test.ts › a scan in the repeated hour…`                           |
+| A wall time in the spring gap is refused with the time an hour later as a suggestion                    | `time.test.ts › a wall time typed into the spring gap…`                 |
+| A wall time in the repeated hour offers both instants and picks neither                                 | `time.test.ts › a wall time typed into the repeated hour…`              |
+| Another branch changes by its own zone                                                                  | `time.test.ts › the same night in Helsinki…`                            |
+| A shift over midnight counts for the day of its begin                                                   | `time.test.ts › a shift over midnight…`                                 |
+| Each branch's time in its own zone                                                                      | `time.test.ts › a branch in another zone…`                              |
+| Nothing reads the device's zone                                                                         | `time.test.ts › a device far away`                                      |
+| An instant has one shape, UTC with its `Z`; a zone-less or offset string is refused under any host zone | `time.test.ts › a device far away › under TZ=…`                         |
 
 ## Money
 

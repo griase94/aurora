@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   clockChange,
   fromInstant,
+  instantMs,
   localDate,
   minutesBetween,
   resolveWall,
   toMinuteInstant,
+  truncate,
 } from "../../src/lib/domain/time.ts";
 
 const BERLIN = "Europe/Berlin";
@@ -171,5 +173,28 @@ describe("the time table", () => {
       process.env["TZ"] = "Pacific/Auckland";
       expect(run()).toEqual(utc);
     });
+
+    it.each(["UTC", "Pacific/Auckland"])(
+      "under TZ=%s an instant without its Z, or with an offset, is refused: only the documented shape is an instant",
+      (zone) => {
+        process.env["TZ"] = zone;
+        for (const bad of [
+          "2026-11-20T17:42",
+          "2026-11-20T17:42:00",
+          "2026-11-20T18:42:00+01:00",
+          "2026-11-20",
+          "Fri Nov 20 2026 17:42:00",
+          "2026-11-20 17:42:00Z",
+        ]) {
+          expect(() => instantMs(bad), bad).toThrow(RangeError);
+          expect(() => truncate(bad), bad).toThrow(RangeError);
+        }
+        const ms = Date.UTC(2026, 10, 20, 17, 42);
+        expect(instantMs("2026-11-20T17:42Z")).toBe(ms);
+        expect(instantMs("2026-11-20T17:42:00Z")).toBe(ms);
+        expect(instantMs("2026-11-20T17:42:00.000Z")).toBe(ms);
+        expect(truncate("2026-11-20T17:42:31.5Z")).toBe("2026-11-20T17:42:00Z");
+      },
+    );
   });
 });
