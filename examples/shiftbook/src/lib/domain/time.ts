@@ -85,16 +85,28 @@ export function addDays(date: PlainDate, days: number): PlainDate {
   return `${pad(t.getUTCFullYear(), 4)}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
 }
 
+/** The days of a month in the proleptic Gregorian calendar. */
+function daysIn(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+/** A plain date's parts; a date that does not exist (30 February) is a `RangeError`, never clamped. */
 export function parseDate(date: PlainDate): [number, number, number] {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
   if (!m) throw new RangeError(`not a date: ${date}`);
-  return [Number(m[1]), Number(m[2]), Number(m[3])];
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (mo < 1 || mo > 12 || d < 1 || d > daysIn(y, mo))
+    throw new RangeError(`no such date: ${date}`);
+  return [y, mo, d];
 }
 
+/** A wall time's parts, 00:00 to 23:59; anything else is a `RangeError`, never carried over. */
 function parseTime(time: PlainTime): [number, number] {
   const m = /^(\d{2}):(\d{2})$/.exec(time);
   if (!m) throw new RangeError(`not a time: ${time}`);
-  return [Number(m[1]), Number(m[2])];
+  const [h, mi] = [Number(m[1]), Number(m[2])];
+  if (h > 23 || mi > 59) throw new RangeError(`no such time: ${time}`);
+  return [h, mi];
 }
 
 /**
@@ -124,9 +136,12 @@ export function resolveWall(
 }
 
 /**
- * The clock change inside `[a, b]` in a zone: `+60` when the clock went back
- * (the span holds an hour more than its wall times say), `-60` when it jumped
- * forward; `null` when the offset is the same at both ends.
+ * The net clock change between `a` and `b` in a zone, in minutes: positive
+ * when the clock went back (the span holds more time than its wall times say,
+ * `+60` in Europe), negative when it jumped forward; `null` when the offset is
+ * the same at both ends. Only the two endpoints are compared, so a span over
+ * two changes that cancel out (spring and autumn) gives `null`; a shift never
+ * spans that long.
  */
 export function clockChange(
   a: Instant,

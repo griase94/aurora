@@ -65,6 +65,11 @@ describe("rule 6, periods: the start day is clamped to a shorter month's last da
     });
   });
 
+  it("an impossible date is refused, not clamped into a period", () => {
+    expect(() => periodContaining("2026-02-30", 21)).toThrow(RangeError);
+    expect(() => periodContaining("2026-00-10", 21)).toThrow(RangeError);
+  });
+
   it("a period ends on the day before the next one starts, so periods tile the calendar", () => {
     for (const day of [1, 21, 29, 30, 31]) {
       const list = periodsBetween("2026-01-01", "2028-12-31", day);

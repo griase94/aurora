@@ -92,6 +92,29 @@ describe("the time table", () => {
     });
   });
 
+  it("an impossible date or time is refused, never shifted silently: 30 February, 25:00, 10:75", () => {
+    expect(() => resolveWall("2026-02-30", "10:00", BERLIN)).toThrow(
+      RangeError,
+    );
+    expect(() => resolveWall("2026-13-01", "10:00", BERLIN)).toThrow(
+      RangeError,
+    );
+    expect(() => resolveWall("2026-11-20", "25:00", BERLIN)).toThrow(
+      RangeError,
+    );
+    expect(() => resolveWall("2026-11-20", "10:75", BERLIN)).toThrow(
+      RangeError,
+    );
+    expect(() => resolveWall("2026-11-20", "24:00", BERLIN)).toThrow(
+      RangeError,
+    );
+    // The last real day of a leap February still resolves.
+    expect(resolveWall("2028-02-29", "10:00", BERLIN)).toEqual({
+      kind: "exact",
+      instant: "2028-02-29T09:00:00Z",
+    });
+  });
+
   it("a wall time typed into the repeated hour offers both instants and picks neither", () => {
     expect(resolveWall("2026-10-25", "02:30", BERLIN)).toEqual({
       kind: "overlap",
