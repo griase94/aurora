@@ -29,7 +29,7 @@ export const ALLOWED_HOSTS = [
 ];
 
 const EMAIL = /[\w.+-]+@([\w-]+(?:\.[\w-]+)+)/g;
-const PHONE = /\+\d{1,3}(?:[  -]?\d){6,}/g;
+const PHONE = /\+\d{1,3}(?:[ \u00a0-]?\d){6,}/g;
 const IBAN = /\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/g;
 const URL_HOST = /\bhttps?:\/\/([^/\s"'`)<>]+)/g;
 const LOCAL_PATH =
@@ -66,7 +66,7 @@ export function safetyProblems(
       out.push(`${path}: mail address at ${domain}; use example.com`);
   }
   for (const m of text.matchAll(PHONE)) {
-    const n = m[0].replace(/[ -]/g, " ");
+    const n = m[0].replace(/[\u00a0-]/g, " ");
     if (
       !FICTION_PHONE_PREFIXES.some((p) =>
         n.replace(/ /g, "").startsWith(p.replace(/ /g, "")),
