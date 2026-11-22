@@ -51,8 +51,10 @@ export type LoadStatus = "ready" | "loading" | "error";
  * Why the session started over, for the toast that says so: the stored
  * session was older than 12 hours, was written by another schema, was stored
  * over another seed, or (a bug) a stored envelope no longer applied.
+ * `reload` is not a start-over: a newer build of the app wrote the stored
+ * session, so this tab writes nothing more until the page is reloaded.
  */
-export type Notice = "expired" | "schema" | "seed" | "diverged";
+export type Notice = "expired" | "schema" | "seed" | "diverged" | "reload";
 
 export interface Session {
   readonly tenantId: TenantId;
@@ -109,7 +111,16 @@ export interface SessionOptions {
   nowMs?: () => number;
   /** Draws one token code; the default uses the platform's random source. */
   newCode?: () => string;
+  /**
+   * This app build's ordinal (its build time, say); a newer build replaces an
+   * older one's session, and a tab that finds a newer one stored writes
+   * nothing and shows `reload`. Absent means 0.
+   */
+  build?: number;
 }
+
+/** Thrown inside the lock when a newer build wrote the stored session: nothing may be written. */
+class NewerBuild extends Error {}
 
 const UNAVAILABLE = (reason: string): Outcome => ({
   ok: false,
@@ -229,6 +240,9 @@ export function createSession(o: SessionOptions): Session {
   const visibility = o.visibility ?? ALWAYS_VISIBLE;
   const realNow = o.nowMs ?? (() => Date.now());
   const drawCode = o.newCode ?? randomCode;
+  const build = o.build ?? 0;
+  /** A newer build wrote the stored session: this tab writes nothing more. */
+  let stale = false;
 
   // The prerendered state: the default dataset at its instant, nothing restored.
   let pos: Position = seeded(tenantId, "evening", "", -1);
@@ -284,12 +298,35 @@ export function createSession(o: SessionOptions): Session {
    * lock, so a commit granted later never gets an earlier instant.
    */
   const transact = <T>(fn: (tx: StoreTx, realMs: number) => T): Promise<T> =>
-    store.transact((tx) => fn(tx, realNow()));
+    store
+      .transact((tx) => fn(tx, realNow()))
+      .catch((e: unknown) => {
+        if (e instanceof NewerBuild) markStale();
+        throw e;
+      });
+
+  function markStale() {
+    if (stale) return;
+    stale = true;
+    notice = "reload";
+    notify();
+  }
+
+  /** Runs a writer unless this tab is stale; a newer build found in the lock ends it quietly. */
+  async function writer(run: () => Promise<void>): Promise<void> {
+    if (stale) return;
+    try {
+      await run();
+    } catch (e) {
+      if (!(e instanceof NewerBuild)) throw e;
+    }
+  }
 
   const freshMeta = (realMs: number): SessionMeta => ({
     v: 1,
     id: randomCode().slice(3, 15),
     startedAtMs: realMs,
+    ...(build > 0 ? { build } : {}),
     clock: { mode: "live", offsetMinutes: 0 },
     tenants: {},
     prefs: {},
@@ -341,6 +378,13 @@ export function createSession(o: SessionOptions): Session {
     let found: Notice | null = null;
     let changed = false;
     let read = tx.meta();
+    const storedBuild =
+      read.kind === "ok"
+        ? (read.meta.build ?? 0)
+        : read.kind === "mismatch"
+          ? read.build
+          : 0;
+    if (storedBuild > build) throw new NewerBuild();
     if (read.kind === "mismatch") {
       tx.clear();
       found = "schema";
@@ -354,6 +398,9 @@ export function createSession(o: SessionOptions): Session {
     }
     if (!m) {
       m = freshMeta(realMs);
+      changed = true;
+    } else if ((m.build ?? 0) < build) {
+      m = { ...m, build };
       changed = true;
     }
     let e = m.tenants[tenantId];
@@ -407,30 +454,32 @@ export function createSession(o: SessionOptions): Session {
   const announce = () => channel.post({ kind: "meta" });
 
   /** Reads the whole log inside the lock and folds it from the seed; starts over if it does not apply. */
-  async function resync() {
-    const r = await transact((tx, realMs) => {
-      const ens = ensureMeta(tx, realMs);
-      const e = ens.meta.tenants[tenantId]!;
-      const head = tx.head(tenantId);
-      const folded = fold(
-        seeded(tenantId, e.scenario, ens.meta.id, head.epoch),
-        tx.readLog(tenantId, head.epoch, 0),
-      );
-      if (folded) return { ...ens, pos: folded, diverged: false };
-      const over = startOver(tx, ens.meta, e.scenario, realMs);
-      return {
-        ...ens,
-        meta: over.meta,
-        changed: true,
-        pos: seeded(tenantId, e.scenario, over.meta.id, over.head.epoch),
-        diverged: true,
-      };
+  function resync(): Promise<void> {
+    return writer(async () => {
+      const r = await transact((tx, realMs) => {
+        const ens = ensureMeta(tx, realMs);
+        const e = ens.meta.tenants[tenantId]!;
+        const head = tx.head(tenantId);
+        const folded = fold(
+          seeded(tenantId, e.scenario, ens.meta.id, head.epoch),
+          tx.readLog(tenantId, head.epoch, 0),
+        );
+        if (folded) return { ...ens, pos: folded, diverged: false };
+        const over = startOver(tx, ens.meta, e.scenario, realMs);
+        return {
+          ...ens,
+          meta: over.meta,
+          changed: true,
+          pos: seeded(tenantId, e.scenario, over.meta.id, over.head.epoch),
+          diverged: true,
+        };
+      });
+      adopt(r.pos, true);
+      adoptMeta(r.meta);
+      setNotice(r.diverged ? "diverged" : r.notice);
+      if (r.changed) announce();
+      notify();
     });
-    adopt(r.pos, true);
-    adoptMeta(r.meta);
-    setNotice(r.diverged ? "diverged" : r.notice);
-    if (r.changed) announce();
-    notify();
   }
 
   /** Reads what other tabs appended, from this tab's own position, outside the lock. */
@@ -460,7 +509,7 @@ export function createSession(o: SessionOptions): Session {
 
   /** Re-reads the store after another tab's message or when the page shows again. */
   function syncFromStore() {
-    if (destroyed || !restored) return;
+    if (destroyed || !restored || stale) return;
     try {
       const read = store.readMeta();
       if (read.kind !== "ok" || realNow() - read.meta.startedAtMs > EXPIRY_MS) {
@@ -478,20 +527,22 @@ export function createSession(o: SessionOptions): Session {
   }
 
   /** Writes a change of the meta inside the lock and tells the other tabs. */
-  async function updateMeta(
+  function updateMeta(
     change: (m: SessionMeta, realMs: number) => SessionMeta,
-  ) {
-    const r = await transact((tx, realMs) => {
-      const ens = ensureMeta(tx, realMs);
-      const next = change(ens.meta, realMs);
-      tx.writeMeta(next);
-      return { meta: next, notice: ens.notice };
+  ): Promise<void> {
+    return writer(async () => {
+      const r = await transact((tx, realMs) => {
+        const ens = ensureMeta(tx, realMs);
+        const next = change(ens.meta, realMs);
+        tx.writeMeta(next);
+        return { meta: next, notice: ens.notice };
+      });
+      adoptMeta(r.meta);
+      setNotice(r.notice);
+      announce();
+      if (restored) catchUp();
+      notify();
     });
-    adoptMeta(r.meta);
-    setNotice(r.notice);
-    announce();
-    if (restored) catchUp();
-    notify();
   }
 
   const updateEntry = (change: (e: TenantMeta) => TenantMeta) =>
@@ -524,7 +575,12 @@ export function createSession(o: SessionOptions): Session {
       void store
         .transact((tx) => {
           const read = tx.meta();
-          if (read.kind !== "ok" || !read.meta.prefs.failNextLoad) return null;
+          if (
+            read.kind !== "ok" ||
+            (read.meta.build ?? 0) > build ||
+            !read.meta.prefs.failNextLoad
+          )
+            return null;
           const next: SessionMeta = {
             ...read.meta,
             prefs: { ...read.meta.prefs, failNextLoad: false },
@@ -556,11 +612,21 @@ export function createSession(o: SessionOptions): Session {
   };
 
   async function restore() {
-    const r = await transact((tx, realMs) => {
-      const ens = ensureMeta(tx, realMs);
-      const head = tx.head(tenantId);
-      return { ...ens, head, log: tx.readLog(tenantId, head.epoch, 0) };
-    });
+    if (stale) return;
+    let r;
+    try {
+      r = await transact((tx, realMs) => {
+        const ens = ensureMeta(tx, realMs);
+        const head = tx.head(tenantId);
+        return { ...ens, head, log: tx.readLog(tenantId, head.epoch, 0) };
+      });
+    } catch (e) {
+      if (!(e instanceof NewerBuild)) throw e;
+      // A newer build owns the stored session: show what this tab has, write nothing.
+      restored = true;
+      notify();
+      return;
+    }
     const e = r.meta.tenants[tenantId]!;
     const folded = fold(
       seeded(tenantId, e.scenario, r.meta.id, r.head.epoch),
@@ -701,6 +767,7 @@ export function createSession(o: SessionOptions): Session {
   }
 
   async function dispatchAs(actor: Actor, command: Command): Promise<Outcome> {
+    if (stale) return UNAVAILABLE("reload");
     const seen = pos;
     const latencyMs = prefs().latencyMs ?? 0;
     if (latencyMs > 0) await new Promise((r) => setTimeout(r, latencyMs));
@@ -709,7 +776,8 @@ export function createSession(o: SessionOptions): Session {
       r = await transact((tx, realMs) =>
         commit(tx, realMs, seen, actor, command),
       );
-    } catch {
+    } catch (e) {
+      if (e instanceof NewerBuild) return UNAVAILABLE("reload");
       // The storage refused (quota, a blocked origin, a lock error). Nothing
       // was appended that the next read would not fold; read everything again.
       background(resync);
@@ -815,29 +883,33 @@ export function createSession(o: SessionOptions): Session {
       notify();
       await updateMeta((m) => ({ ...m, prefs: { ...m.prefs, ...p } }));
     },
-    async setScenario(scenario) {
-      const r = await transact((tx, realMs) =>
-        startOver(tx, ensureMeta(tx, realMs).meta, scenario, realMs),
-      );
-      adopt(seeded(tenantId, scenario, r.meta.id, r.head.epoch), true);
-      adoptMeta(r.meta);
-      announce();
-      runLoad();
-      notify();
-    },
-    async reset() {
-      const r = await transact((tx, realMs) => {
-        tx.clear();
-        const ens = ensureMeta(tx, realMs);
-        return { meta: ens.meta, head: tx.head(tenantId) };
-      });
-      adopt(seeded(tenantId, "evening", r.meta.id, r.head.epoch), true);
-      adoptMeta(r.meta);
-      // A new session id: every tab of every tenant starts over when it reads it.
-      announce();
-      runLoad();
-      notify();
-    },
+    setScenario: (scenario) =>
+      writer(async () => {
+        const r = await transact((tx, realMs) =>
+          startOver(tx, ensureMeta(tx, realMs).meta, scenario, realMs),
+        );
+        adopt(seeded(tenantId, scenario, r.meta.id, r.head.epoch), true);
+        adoptMeta(r.meta);
+        announce();
+        runLoad();
+        notify();
+      }),
+    reset: () =>
+      writer(async () => {
+        const r = await transact((tx, realMs) => {
+          // Checked before the clear: an older tab never wipes a newer build's session.
+          ensureMeta(tx, realMs);
+          tx.clear();
+          const ens = ensureMeta(tx, realMs);
+          return { meta: ens.meta, head: tx.head(tenantId) };
+        });
+        adopt(seeded(tenantId, "evening", r.meta.id, r.head.epoch), true);
+        adoptMeta(r.meta);
+        // A new session id: every tab of every tenant starts over when it reads it.
+        announce();
+        runLoad();
+        notify();
+      }),
     restore,
     navigated: () => runLoad(),
     dismissNotice() {

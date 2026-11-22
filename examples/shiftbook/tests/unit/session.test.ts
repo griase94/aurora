@@ -47,6 +47,7 @@ function origin(o: { storage?: MemoryStorage; store?: SessionStore } = {}) {
     extra: {
       visibility?: ReturnType<typeof createVisibilitySwitch>;
       tenantId?: TenantId;
+      build?: number;
     } = {},
   ) =>
     createSession({
@@ -854,6 +855,69 @@ describe("session: storage that fails or vanishes", () => {
     await settle();
     expect(b.notice).toBe("expired");
     expect(hashOf(a.world)).toBe(hashOf(b.world));
+  });
+});
+
+describe("session: two builds of the app on one origin", () => {
+  const metaOf = (storage: MemoryStorage) =>
+    JSON.parse(storage.getItem(KEYS.meta)!) as {
+      build?: number;
+      tenants: { kranich: { seedHash: string } };
+    };
+
+  it("a tab of an older build stops writing and asks for a reload instead of discarding a newer build's log", async () => {
+    const o = origin();
+    const newer = await restored(o.tab({ build: 2 }));
+    await newer.dispatchAs(KIOSK, stamp(badges()[0]!.code));
+    const before = o.storage.entries();
+
+    const older = await restored(o.tab({ build: 1 }));
+    expect(older.notice).toBe("reload");
+    expect(older.restored).toBe(true);
+    expect(await older.dispatchAs(KIOSK, stamp(badges()[1]!.code))).toEqual({
+      ok: false,
+      refusal: { code: "unavailable", detail: { reason: "reload" } },
+    });
+    await older.setScenario("busy");
+    await older.setLanguage("en");
+    await older.reset();
+    older.clock.advance(30);
+    await settle();
+    expect(o.storage.entries()).toEqual(before);
+    expect(metaOf(o.storage).build).toBe(2);
+  });
+
+  it("an open tab of an older build that meets a newer build's session stops too, and the newer log survives", async () => {
+    const o = origin();
+    const older = await restored(o.tab({ build: 1 }));
+    // The newer build ships another seed: its tab starts the tenant over, once.
+    const meta = metaOf(o.storage);
+    meta.tenants.kranich.seedHash = "an-older-seed";
+    o.storage.setItem(KEYS.meta, JSON.stringify(meta));
+    const newer = await restored(o.tab({ build: 2 }));
+    expect(newer.notice).toBe("seed");
+    expect(metaOf(o.storage).build).toBe(2);
+    await newer.dispatchAs(KIOSK, stamp(badges()[0]!.code));
+    const before = o.storage.entries();
+
+    expect((await older.dispatchAs(KIOSK, stamp(badges()[1]!.code))).ok).toBe(
+      false,
+    );
+    expect(older.notice).toBe("reload");
+    expect(o.storage.entries()).toEqual(before);
+    expect((await newer.dispatchAs(KIOSK, stamp(badges()[1]!.code))).ok).toBe(
+      true,
+    );
+    expect(newer.notice).toBe("seed");
+  });
+
+  it("a newer build's meta of another schema is not cleared by an older tab", async () => {
+    const o = origin();
+    const future = JSON.stringify({ v: 2, build: 5, anything: true });
+    o.storage.setItem(KEYS.meta, future);
+    const older = await restored(o.tab({ build: 1 }));
+    expect(older.notice).toBe("reload");
+    expect(o.storage.getItem(KEYS.meta)).toBe(future);
   });
 });
 

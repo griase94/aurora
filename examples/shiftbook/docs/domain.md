@@ -194,6 +194,13 @@ shiftbook.v1.log.<tenant>.<epoch>.<seq>    Envelope { seq, id, at, actor, comman
 written afresh (first visit, expiry, reset, a storage that was cleared), so a tab notices a log it did not fold
 from even when epoch numbers start again at 0.
 
+**Two builds on one origin.** A tab left open across a deploy runs the old build beside reloaded tabs of the new
+one. The meta stores the newest build that wrote it (`build`, the app's ordinal such as its build time, passed as
+`createSession({ build })`; absent means 0). A tab of a newer build raises it, and only then may the seed rule start
+the tenant over. A tab that finds a newer build stored, even in a meta of another schema, writes nothing more: every
+commit resolves `unavailable` ("reload"), the setters, `reset` and clock changes do nothing, and the notice `reload`
+asks the person to reload. So two builds never wipe each other's log back and forth.
+
 **The clock.** The session counts minutes (`offsetMinutes`, plus real time while live). A tenant's clock is its
 dataset's instant plus the session minutes since the dataset began (`clockBaseMinutes`), so every dataset begins at
 its own instant, and a switch in one tenant leaves the other's clock alone. Advance, freeze and resume are relative
@@ -224,6 +231,7 @@ never rejects: a storage error resolves `unavailable` ("storage"), a command tha
 | Restore folds the stored log over the seed after mount; the first render is the seed's                                                                                                                                                                         | `session.test.ts › restore folds the stored log…`                                                                                            |
 | A session older than 12 hours of real time starts over with a notice                                                                                                                                                                                           | `session.test.ts › a session older than 12 hours…`                                                                                           |
 | A meta of another schema, and a log over another seed, are discarded with a notice                                                                                                                                                                             | `session.test.ts › a meta of another schema…`, `› a log stored over another seed…`                                                           |
+| A tab of an older build writes nothing over a newer build's session and asks for a reload; a newer build takes over an older one's                                                                                                                             | `session.test.ts › session: two builds of the app on one origin`                                                                             |
 | A stored envelope that no longer applies starts the tenant over; it never yields a broken world                                                                                                                                                                | `session.test.ts › a stored envelope that no longer applies…`                                                                                |
 | An entry under the head that is missing, not JSON, `null` or not an envelope's shape starts the tenant over with the notice `diverged`, on restore, catch-up and commit                                                                                        | `session.test.ts › an envelope under the head that is…`, `› a commit that finds…`                                                            |
 | At the cap of 2,000 envelopes a commit is refused with `unavailable`, and a full log still restores                                                                                                                                                            | `session.test.ts › at the cap…`                                                                                                              |

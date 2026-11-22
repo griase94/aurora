@@ -96,6 +96,11 @@ export interface SessionMeta {
   id: string;
   /** Real time of the first visit; older than 12 hours resets the session. */
   startedAtMs: number;
+  /**
+   * The newest app build that wrote the session (its ordinal, such as the build
+   * time); absent means 0. A tab of an older build writes nothing.
+   */
+  build?: number;
   clock: ClockMeta;
   tenants: Partial<Record<TenantId, TenantMeta>>;
   prefs: SessionPrefs;
@@ -118,9 +123,20 @@ export interface Head {
   seq: number;
 }
 
-/** What the stored meta is: absent, written by another schema (or unreadable), or ours. */
+/**
+ * What the stored meta is: absent, written by another schema (or unreadable),
+ * or ours. A meta of another schema still names the build that wrote it, when
+ * it can be read, so an older tab never clears a newer build's session.
+ */
 export type MetaRead =
-  { kind: "none" } | { kind: "mismatch" } | { kind: "ok"; meta: SessionMeta };
+  | { kind: "none" }
+  | { kind: "mismatch"; build: number }
+  | { kind: "ok"; meta: SessionMeta };
+
+const buildOf = (v: unknown): number =>
+  isObject(v) && typeof v.build === "number" && Number.isFinite(v.build)
+    ? v.build
+    : 0;
 
 /** What a writer may do while it holds the lock. */
 export interface StoreTx {
@@ -208,7 +224,7 @@ function parseMeta(raw: string | null): MetaRead {
   try {
     value = JSON.parse(raw);
   } catch {
-    return { kind: "mismatch" };
+    return { kind: "mismatch", build: 0 };
   }
   if (
     !isObject(value) ||
@@ -221,7 +237,7 @@ function parseMeta(raw: string | null): MetaRead {
     !isObject(value.tenants) ||
     !isObject(value.prefs)
   )
-    return { kind: "mismatch" };
+    return { kind: "mismatch", build: buildOf(value) };
   return { kind: "ok", meta: value as unknown as SessionMeta };
 }
 
