@@ -395,15 +395,26 @@ export interface LockManagerLike {
 /** The lock's name: one per origin, for every tenant. */
 export const LOCK_NAME = "shiftbook.v1";
 
+/** The origin's `localStorage`, or `null` where site data is blocked (reading it throws) or absent. */
+function siteStorage(): KeyValue | null {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The browser adapter: `localStorage`, serialised by the Web Locks API. Where
  * the API is missing (an origin that is not secure, an old browser) the store
- * runs in single-tab mode.
+ * runs in single-tab mode. Where site storage is blocked (cookie blocking,
+ * some private modes, a sandboxed frame) it runs single-tab in memory.
  */
 export function createBrowserStore(
   o: { storage?: KeyValue; locks?: LockManagerLike | undefined } = {},
 ): SessionStore {
-  const storage = o.storage ?? globalThis.localStorage;
+  const storage = o.storage ?? siteStorage();
+  if (!storage) return createStore(new MemoryStorage(), null);
   const locks =
     "locks" in o
       ? o.locks

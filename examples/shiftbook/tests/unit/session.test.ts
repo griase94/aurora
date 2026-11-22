@@ -571,6 +571,31 @@ describe("session: single-tab mode without the lock", () => {
     await store.transact(() => 1);
     expect(names).toEqual(["shiftbook.v1"]);
   });
+
+  it("where site storage is blocked, the browser store falls back to single-tab memory instead of throwing", async () => {
+    const saved = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      get() {
+        throw new DOMException("The operation is insecure.", "SecurityError");
+      },
+    });
+    try {
+      const store = createBrowserStore({
+        locks: { request: async (_name, cb) => cb() },
+      });
+      expect(store.synced).toBe(false);
+      const o = origin({ store });
+      const s = await restored(o.tab());
+      expect((await s.dispatchAs(KIOSK, stamp(badges()[0]!.code))).ok).toBe(
+        true,
+      );
+      expect(s.synced).toBe(false);
+    } finally {
+      if (saved) Object.defineProperty(globalThis, "localStorage", saved);
+      else delete (globalThis as { localStorage?: unknown }).localStorage;
+    }
+  });
 });
 
 describe("session: preferences travel between tabs", () => {
