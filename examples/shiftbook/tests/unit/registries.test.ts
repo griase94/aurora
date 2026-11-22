@@ -129,4 +129,41 @@ describe("registries: the domain and the world stay pure", () => {
       "src/lib/domain/selectors/me.ts touches the DOM",
     ]);
   });
+
+  it.each([
+    [
+      'import "svelte";',
+      "imports svelte: the domain and the world are framework-free",
+    ],
+    [
+      'const m = await import("svelte");',
+      "imports svelte: the domain and the world are framework-free",
+    ],
+    [
+      'import X from "../ui/X.svelte";',
+      "imports ../ui/X.svelte: the domain and the world are framework-free",
+    ],
+    [
+      'export * from "../../session/store.ts";',
+      "imports ../../session/store.ts: the domain and the world never reach the session",
+    ],
+    ["const t = performance.now();", "reads the real time (performance.now)"],
+    ["const t = Date();", "reads the real time (Date())"],
+    ["const t = Temporal.Now.instant();", "reads the real time (Temporal.Now)"],
+    ["const id = crypto.randomUUID();", "draws randomness (crypto)"],
+    ["const d = globalThis.document;", "touches the DOM"],
+    ["const n = globalThis.navigator.language;", "touches the DOM"],
+  ])("the guard catches %s", (source, problem) => {
+    expect(
+      purityProblems(new Map([["src/lib/world/seed/people.ts", source]])),
+    ).toEqual([`src/lib/world/seed/people.ts ${problem}`]);
+  });
+
+  it("pure uses of Date stay allowed: a given instant, Date.UTC and Date.parse", () => {
+    const ok =
+      "const a = new Date(ms);\nconst b = Date.UTC(2026, 0, 1);\nconst c = Date.parse(i);\nfunction f(d: Date): Date { return d; }";
+    expect(purityProblems(new Map([["src/lib/domain/time.ts", ok]]))).toEqual(
+      [],
+    );
+  });
 });

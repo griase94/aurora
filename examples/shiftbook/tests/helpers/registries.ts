@@ -58,6 +58,18 @@ const importsOf = (source: string) =>
   );
 
 /**
+ * Every module a source reaches: static imports and re-exports, side-effect
+ * imports (`import "x"`), dynamic imports (`import("x")`) and `require("x")`.
+ */
+const specifiersOf = (source: string) => [
+  ...importsOf(source),
+  ...[...source.matchAll(/^\s*import\s+["']([^"']+)["']/gm)].map((m) => m[1]!),
+  ...[
+    ...source.matchAll(/\b(?:import|require)\s*\(\s*["'`]([^"'`]+)["'`]/g),
+  ].map((m) => m[1]!),
+];
+
+/**
  * The problems of the closed registries over the example's source files
  * (paths relative to the example, with their text).
  */
@@ -139,18 +151,33 @@ export function purityProblems(files: ReadonlyMap<string, string>): string[] {
   const forbidden: [RegExp, string][] = [
     [/\bDate\.now\s*\(/, "reads the real time (Date.now)"],
     [/\bnew Date\s*\(\s*\)/, "reads the real time (new Date())"],
+    // `Date()` without `new` returns the current time as a string.
+    [/(?<![\w$.])(?<!new\s+)Date\s*\(/, "reads the real time (Date())"],
+    [/\bperformance\.now\s*\(/, "reads the real time (performance.now)"],
+    [/\bTemporal\.Now\b/, "reads the real time (Temporal.Now)"],
     [/\bMath\.random\s*\(/, "draws randomness (Math.random)"],
-    [/\bcrypto\.getRandomValues\s*\(/, "draws randomness (crypto)"],
     [
-      /\b(?:document|window|navigator|localStorage|sessionStorage)\./,
+      /\bcrypto\.(?:getRandomValues|randomUUID)\s*\(/,
+      "draws randomness (crypto)",
+    ],
+    [
+      /\b(?:document|window|navigator|localStorage|sessionStorage)\b(?:\.|\s*\[)/,
+      "touches the DOM",
+    ],
+    [
+      /\bglobalThis\s*\.\s*(?:document|window|navigator|localStorage|sessionStorage)\b/,
       "touches the DOM",
     ],
   ];
   for (const [path, source] of files) {
     if (!path.startsWith(`${DOMAIN}/`) && !path.startsWith(`${WORLD}/`))
       continue;
-    for (const spec of importsOf(source)) {
-      if (spec === "svelte" || spec.startsWith("svelte/"))
+    for (const spec of specifiersOf(source)) {
+      if (
+        spec === "svelte" ||
+        spec.startsWith("svelte/") ||
+        spec.endsWith(".svelte")
+      )
         out.push(
           `${path} imports ${spec}: the domain and the world are framework-free`,
         );
@@ -159,8 +186,10 @@ export function purityProblems(files: ReadonlyMap<string, string>): string[] {
           `${path} imports ${spec}: the domain and the world never reach the session`,
         );
     }
+    const problems = new Set<string>();
     for (const [re, what] of forbidden)
-      if (re.test(source)) out.push(`${path} ${what}`);
+      if (re.test(source)) problems.add(`${path} ${what}`);
+    out.push(...problems);
   }
   return out;
 }
