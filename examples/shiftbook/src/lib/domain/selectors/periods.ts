@@ -1,6 +1,6 @@
 /**
  * Period selectors. The confirmation figures and the stale-confirmation
- * issues are filled by the periods lane (F.5).
+ * issues are filled when the periods area is built.
  */
 import type { PeriodId, WorldState } from "../types.ts";
 import type { IssueSource } from "./issues.ts";

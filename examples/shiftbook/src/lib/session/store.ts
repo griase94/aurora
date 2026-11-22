@@ -37,10 +37,10 @@ export const KEYS = {
   logPrefix: (tenant: TenantId) => `${PREFIX}log.${tenant}.`,
 } as const;
 
-/** At most this many envelopes per tenant and epoch; a commit beyond it is refused (H21). */
+/** At most this many envelopes per tenant and epoch, so the log fits the storage quota; a commit beyond it is refused. */
 export const LOG_CAP = 2000;
 
-/** A session older than this much real time resets (H2). */
+/** A session older than this much real time starts over. */
 export const EXPIRY_MS = 12 * 60 * 60 * 1000;
 
 export type PersonaRef =
@@ -65,8 +65,14 @@ export interface SessionPrefs {
 
 export interface TenantMeta {
   scenario: ScenarioId;
-  /** The hash of the seed the log was written over; another hash discards the log (H4). */
+  /** The hash of the seed the log was written over; another hash discards the log. */
   seedHash: string;
+  /**
+   * The session minute at which this dataset began. The tenant's clock is the
+   * dataset's instant plus the session minutes since, so every dataset starts
+   * at its own instant. Absent means 0.
+   */
+  clockBaseMinutes?: number;
   persona?: PersonaRef;
   recent?: PersonaRef[];
   /** The brand studio's override, opaque to the session; the app shell reads it. */
@@ -82,6 +88,12 @@ export interface ClockMeta {
 
 export interface SessionMeta {
   v: 1;
+  /**
+   * Drawn when the meta is written afresh (first visit, expiry, reset, a
+   * cleared storage). Epochs count within one session id, so a tab that
+   * folded another session's log notices even when the epoch numbers repeat.
+   */
+  id: string;
   /** Real time of the first visit; older than 12 hours resets the session. */
   startedAtMs: number;
   clock: ClockMeta;
@@ -201,6 +213,7 @@ function parseMeta(raw: string | null): MetaRead {
   if (
     !isObject(value) ||
     value.v !== SCHEMA_VERSION ||
+    typeof value.id !== "string" ||
     typeof value.startedAtMs !== "number" ||
     !isObject(value.clock) ||
     (value.clock.mode !== "live" && value.clock.mode !== "frozen") ||
@@ -339,7 +352,7 @@ export const LOCK_NAME = "shiftbook.v1";
 /**
  * The browser adapter: `localStorage`, serialised by the Web Locks API. Where
  * the API is missing (an origin that is not secure, an old browser) the store
- * runs in single-tab mode (H25).
+ * runs in single-tab mode.
  */
 export function createBrowserStore(
   o: { storage?: KeyValue; locks?: LockManagerLike | undefined } = {},

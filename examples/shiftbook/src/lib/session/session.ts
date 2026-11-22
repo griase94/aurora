@@ -24,7 +24,12 @@ import { SCENARIOS, type ScenarioId } from "../world/scenarios.ts";
 import { seedHash, seedWorld } from "../world/seed.ts";
 import { tenantFacts, type TenantFacts } from "../world/tenants.ts";
 import type { SessionChannel } from "./channel.ts";
-import { createClock, scenarioMs, type Clock } from "./clock.ts";
+import {
+  createClock,
+  scenarioMs,
+  sessionMinutes,
+  type Clock,
+} from "./clock.ts";
 import {
   EXPIRY_MS,
   LOG_CAP,
@@ -147,6 +152,8 @@ export function replayContext(envelope: Envelope): ApplyContext {
 interface Position {
   world: WorldState;
   scenario: ScenarioId;
+  /** The stored meta's id the position was folded under; "" before restore. */
+  session: string;
   epoch: number;
   seq: number;
 }
@@ -172,13 +179,23 @@ function fold(base: Position, envelopes: Envelope[]): Position | null {
 const seeded = (
   tenantId: TenantId,
   scenario: ScenarioId,
+  session: string,
   epoch: number,
 ): Position => ({
   world: seedWorld(tenantId, scenario),
   scenario,
+  session,
   epoch,
   seq: 0,
 });
+
+/** Whether a position belongs to another log than the stored one: another session, epoch or dataset. */
+const otherLine = (
+  p: Position,
+  session: string,
+  head: Head,
+  scenario: ScenarioId,
+) => p.session !== session || p.epoch !== head.epoch || p.scenario !== scenario;
 
 /** The owner of a world: who acts until a persona is chosen. */
 export function defaultPersona(world: WorldState): PersonaRef {
@@ -214,7 +231,7 @@ export function createSession(o: SessionOptions): Session {
   const drawCode = o.newCode ?? randomCode;
 
   // The prerendered state: the default dataset at its instant, nothing restored.
-  let pos: Position = seeded(tenantId, "evening", -1);
+  let pos: Position = seeded(tenantId, "evening", "", -1);
   let meta: SessionMeta | null = null;
   let restored = false;
   let notice: Notice | null = null;
@@ -231,31 +248,78 @@ export function createSession(o: SessionOptions): Session {
   const clock = createClock({
     start: SCENARIOS.evening.instant,
     nowMs: realNow,
-    onChange: (c) => void updateMeta((m) => ({ ...m, clock: c })),
+    onChange: (change) =>
+      void updateMeta((m, realMs) => ({
+        ...m,
+        clock: change(m.clock, m.startedAtMs, realMs),
+      })),
   });
   unsubscribe.push(clock.subscribe(notify));
 
   const entry = (): TenantMeta | undefined => meta?.tenants[tenantId];
   const prefs = (): SessionPrefs => meta?.prefs ?? {};
 
+  /**
+   * Runs `fn` alone across the origin's tabs and reads real time inside the
+   * lock, so a commit granted later never gets an earlier instant.
+   */
+  const transact = <T>(fn: (tx: StoreTx, realMs: number) => T): Promise<T> =>
+    store.transact((tx) => fn(tx, realNow()));
+
   const freshMeta = (realMs: number): SessionMeta => ({
     v: 1,
+    id: randomCode().slice(3, 15),
     startedAtMs: realMs,
     clock: { mode: "live", offsetMinutes: 0 },
     tenants: {},
     prefs: {},
   });
 
+  /** The tenant's entry for a dataset that begins now, at its own instant. */
+  const beginning = (
+    m: SessionMeta,
+    scenario: ScenarioId,
+    realMs: number,
+  ): Pick<TenantMeta, "scenario" | "seedHash" | "clockBaseMinutes"> => ({
+    scenario,
+    seedHash: seedHash(tenantId, scenario),
+    clockBaseMinutes: sessionMinutes(m.clock, m.startedAtMs, realMs),
+  });
+
+  /** Starts the tenant's next epoch on a dataset that begins now; writes the meta. */
+  function startOver(
+    tx: StoreTx,
+    m: SessionMeta,
+    scenario: ScenarioId,
+    realMs: number,
+  ): { meta: SessionMeta; head: Head } {
+    const head = tx.startEpoch(tenantId);
+    const next: SessionMeta = {
+      ...m,
+      tenants: {
+        ...m.tenants,
+        [tenantId]: {
+          ...m.tenants[tenantId],
+          ...beginning(m, scenario, realMs),
+        },
+      },
+    };
+    tx.writeMeta(next);
+    return { meta: next, head };
+  }
+
   /**
    * Reads the stored meta inside the lock and repairs what must be repaired
-   * before anything is folded: another schema, an expired session, a log
-   * stored over another seed (H2, H4).
+   * before anything is folded: another schema, an expired session, a missing
+   * entry, a log stored over another seed. `changed` says it wrote, so the
+   * caller tells the other tabs.
    */
   function ensureMeta(
     tx: StoreTx,
     realMs: number,
-  ): { meta: SessionMeta; notice: Notice | null } {
+  ): { meta: SessionMeta; notice: Notice | null; changed: boolean } {
     let found: Notice | null = null;
+    let changed = false;
     let read = tx.meta();
     if (read.kind === "mismatch") {
       tx.clear();
@@ -268,31 +332,26 @@ export function createSession(o: SessionOptions): Session {
       found = "expired";
       m = null;
     }
-    let dirty = false;
     if (!m) {
       m = freshMeta(realMs);
-      dirty = true;
+      changed = true;
     }
     let e = m.tenants[tenantId];
     if (!e || !(e.scenario in SCENARIOS)) {
       if (tx.head(tenantId).seq > 0) tx.startEpoch(tenantId);
-      e = {
-        ...e,
-        scenario: "evening",
-        seedHash: seedHash(tenantId, "evening"),
-      };
-      dirty = true;
+      e = { ...e, ...beginning(m, "evening", realMs) };
+      changed = true;
     } else if (e.seedHash !== seedHash(tenantId, e.scenario)) {
       tx.startEpoch(tenantId);
-      e = { ...e, seedHash: seedHash(tenantId, e.scenario) };
+      e = { ...e, ...beginning(m, e.scenario, realMs) };
       found ??= "seed";
-      dirty = true;
+      changed = true;
     }
-    if (dirty) {
+    if (changed) {
       m = { ...m, tenants: { ...m.tenants, [tenantId]: e } };
       tx.writeMeta(m);
     }
-    return { meta: m, notice: found };
+    return { meta: m, notice: found, changed };
   }
 
   /** Takes the stored meta as this tab's: preferences, persona, language, the clock. */
@@ -304,6 +363,7 @@ export function createSession(o: SessionOptions): Session {
         start: SCENARIOS[e.scenario].instant,
         clock: m.clock,
         startedAtMs: m.startedAtMs,
+        baseMinutes: e.clockBaseMinutes ?? 0,
       });
   }
 
@@ -311,6 +371,7 @@ export function createSession(o: SessionOptions): Session {
   function adopt(next: Position, force = false) {
     if (
       force ||
+      next.session !== pos.session ||
       next.epoch > pos.epoch ||
       (next.epoch === pos.epoch &&
         (next.seq > pos.seq || next.scenario !== pos.scenario))
@@ -322,47 +383,48 @@ export function createSession(o: SessionOptions): Session {
     if (n) notice = n;
   }
 
+  /** "There is more to read": every tab of every tenant re-reads the meta and its log. */
+  const announce = () => channel.post({ kind: "meta" });
+
   /** Reads the whole log inside the lock and folds it from the seed; starts over if it does not apply. */
   async function resync() {
-    const realMs = realNow();
-    const r = await store.transact((tx) => {
+    const r = await transact((tx, realMs) => {
       const ens = ensureMeta(tx, realMs);
       const e = ens.meta.tenants[tenantId]!;
       const head = tx.head(tenantId);
       const folded = fold(
-        seeded(tenantId, e.scenario, head.epoch),
+        seeded(tenantId, e.scenario, ens.meta.id, head.epoch),
         tx.readLog(tenantId, head.epoch, 0),
       );
       if (folded) return { ...ens, pos: folded, diverged: false };
-      const next = tx.startEpoch(tenantId);
+      const over = startOver(tx, ens.meta, e.scenario, realMs);
       return {
         ...ens,
-        pos: seeded(tenantId, e.scenario, next.epoch),
+        meta: over.meta,
+        changed: true,
+        pos: seeded(tenantId, e.scenario, over.meta.id, over.head.epoch),
         diverged: true,
       };
     });
     adopt(r.pos, true);
     adoptMeta(r.meta);
     setNotice(r.diverged ? "diverged" : r.notice);
-    if (r.diverged)
-      channel.post({
-        kind: "log",
-        tenant: tenantId,
-        epoch: r.pos.epoch,
-        seq: 0,
-      });
+    if (r.changed) announce();
     notify();
   }
 
   /** Reads what other tabs appended, from this tab's own position, outside the lock. */
   function catchUp() {
     const e = entry();
-    if (!e) return;
+    // The entry is gone when another tenant's tab reset or cleared the session.
+    if (!meta || !e) {
+      void restore();
+      return;
+    }
     const head = store.readHead(tenantId);
-    const base =
-      head.epoch !== pos.epoch || e.scenario !== pos.scenario
-        ? seeded(tenantId, e.scenario, head.epoch)
-        : pos;
+    const base = otherLine(pos, meta.id, head, e.scenario)
+      ? seeded(tenantId, e.scenario, meta.id, head.epoch)
+      : pos;
     const envelopes = store.readLog(tenantId, base.epoch, base.seq);
     if (base === pos && envelopes.length === 0) return;
     const next = fold(base, envelopes);
@@ -390,18 +452,19 @@ export function createSession(o: SessionOptions): Session {
   }
 
   /** Writes a change of the meta inside the lock and tells the other tabs. */
-  async function updateMeta(change: (m: SessionMeta) => SessionMeta) {
-    const realMs = realNow();
-    const r = await store.transact((tx) => {
+  async function updateMeta(
+    change: (m: SessionMeta, realMs: number) => SessionMeta,
+  ) {
+    const r = await transact((tx, realMs) => {
       const ens = ensureMeta(tx, realMs);
-      const next = change(ens.meta);
+      const next = change(ens.meta, realMs);
       tx.writeMeta(next);
       return { meta: next, notice: ens.notice };
     });
     adoptMeta(r.meta);
     setNotice(r.notice);
-    channel.post({ kind: "meta" });
-    if (r.notice) catchUp();
+    announce();
+    if (restored) catchUp();
     notify();
   }
 
@@ -446,7 +509,7 @@ export function createSession(o: SessionOptions): Session {
         .then((cleared) => {
           if (cleared) {
             adoptMeta(cleared);
-            channel.post({ kind: "meta" });
+            announce();
           }
           if (token === loadToken) setLoad(cleared ? "error" : "ready");
         });
@@ -461,18 +524,21 @@ export function createSession(o: SessionOptions): Session {
   };
 
   async function restore() {
-    const realMs = realNow();
-    const r = await store.transact((tx) => {
+    const r = await transact((tx, realMs) => {
       const ens = ensureMeta(tx, realMs);
       const head = tx.head(tenantId);
       return { ...ens, head, log: tx.readLog(tenantId, head.epoch, 0) };
     });
     const e = r.meta.tenants[tenantId]!;
-    const folded = fold(seeded(tenantId, e.scenario, r.head.epoch), r.log);
+    const folded = fold(
+      seeded(tenantId, e.scenario, r.meta.id, r.head.epoch),
+      r.log,
+    );
     const firstTime = !restored;
     restored = true;
     adoptMeta(r.meta);
     setNotice(r.notice);
+    if (r.changed) announce();
     if (folded) adopt(folded, true);
     else await resync();
     if (firstTime) {
@@ -489,51 +555,78 @@ export function createSession(o: SessionOptions): Session {
     notify();
   }
 
-  async function dispatchAs(actor: Actor, command: Command): Promise<Outcome> {
-    const latencyMs = prefs().latencyMs ?? 0;
-    if (latencyMs > 0) await new Promise((r) => setTimeout(r, latencyMs));
-    const realMs = realNow();
-    const r = await store.transact((tx) => {
-      const ens = ensureMeta(tx, realMs);
-      const m = ens.meta;
-      if (m.prefs.failNextSave) {
-        const next = { ...m, prefs: { ...m.prefs, failNextSave: false } };
-        tx.writeMeta(next);
-        return { ...ens, meta: next, outcome: UNAVAILABLE("fail next save") };
-      }
-      // Catch up with what other tabs appended, inside the lock.
-      const e = m.tenants[tenantId]!;
-      const head: Head = tx.head(tenantId);
-      const base =
-        head.epoch !== pos.epoch || e.scenario !== pos.scenario
-          ? seeded(tenantId, e.scenario, head.epoch)
-          : pos;
-      const caught = fold(base, tx.readLog(tenantId, base.epoch, base.seq));
-      if (!caught) {
-        const next = tx.startEpoch(tenantId);
-        return {
-          ...ens,
-          notice: "diverged" as const,
-          pos: seeded(tenantId, e.scenario, next.epoch),
-          outcome: UNAVAILABLE("diverged"),
-          posted: true,
-        };
-      }
-      if (caught.seq >= LOG_CAP)
-        return { ...ens, pos: caught, outcome: UNAVAILABLE("log full") };
+  type Commit = {
+    meta: SessionMeta;
+    notice: Notice | null;
+    changed: boolean;
+    outcome: Outcome;
+    pos?: Position;
+    appended?: boolean;
+  };
 
-      const at = toMinuteInstant(
-        scenarioMs(
-          SCENARIOS[e.scenario].instant,
-          m.clock,
-          m.startedAtMs,
-          realMs,
-        ),
-      );
-      const seq = caught.seq + 1;
-      const codes: string[] = [];
-      let n = 0;
-      const outcome = apply(caught.world, command, {
+  /**
+   * The commit inside the lock: repair, catch up, refuse or apply, append.
+   * `seen` is the position the tab showed when the person acted.
+   */
+  function commit(
+    tx: StoreTx,
+    realMs: number,
+    seen: Position,
+    actor: Actor,
+    command: Command,
+  ): Commit {
+    const ens = ensureMeta(tx, realMs);
+    const m = ens.meta;
+    if (m.prefs.failNextSave) {
+      const next = { ...m, prefs: { ...m.prefs, failNextSave: false } };
+      tx.writeMeta(next);
+      return {
+        ...ens,
+        meta: next,
+        changed: true,
+        outcome: UNAVAILABLE("fail next save"),
+      };
+    }
+    // Catch up with what other tabs appended, inside the lock.
+    const e = m.tenants[tenantId]!;
+    const head: Head = tx.head(tenantId);
+    const rebased = otherLine(pos, m.id, head, e.scenario);
+    const base = rebased ? seeded(tenantId, e.scenario, m.id, head.epoch) : pos;
+    const caught = fold(base, tx.readLog(tenantId, base.epoch, base.seq));
+    if (!caught) {
+      const over = startOver(tx, m, e.scenario, realMs);
+      return {
+        ...ens,
+        meta: over.meta,
+        changed: true,
+        notice: "diverged",
+        pos: seeded(tenantId, e.scenario, over.meta.id, over.head.epoch),
+        outcome: UNAVAILABLE("diverged"),
+      };
+    }
+    // The dataset was switched, the session expired or the storage was
+    // cleared since the person acted: they acted on a world that is gone.
+    // The screen shows the new one before anyone acts again.
+    if (otherLine(seen, m.id, head, e.scenario) && caught.world !== seen.world)
+      return { ...ens, pos: caught, outcome: UNAVAILABLE("world changed") };
+    if (caught.seq >= LOG_CAP)
+      return { ...ens, pos: caught, outcome: UNAVAILABLE("log full") };
+
+    const at = toMinuteInstant(
+      scenarioMs(
+        SCENARIOS[e.scenario].instant,
+        m.clock,
+        m.startedAtMs,
+        realMs,
+        e.clockBaseMinutes ?? 0,
+      ),
+    );
+    const seq = caught.seq + 1;
+    const codes: string[] = [];
+    let n = 0;
+    let outcome: Outcome;
+    try {
+      outcome = apply(caught.world, command, {
         now: at,
         actor,
         newId: (kind) => idAt(kind, seq, ++n),
@@ -543,33 +636,57 @@ export function createSession(o: SessionOptions): Session {
           return c;
         },
       });
-      if (!outcome.ok) return { ...ens, pos: caught, outcome };
-      tx.append(tenantId, {
-        seq,
-        id: `${tenantId}.${caught.epoch}.${seq}`,
-        at,
-        actor,
-        command,
-        ...(codes.length > 0 ? { codes } : {}),
-      });
-      return {
-        ...ens,
-        pos: { ...caught, world: outcome.state, seq },
-        outcome,
-        posted: true,
+    } catch {
+      outcome = {
+        ok: false,
+        refusal: { code: "invalid", detail: { reason: "threw" } },
       };
+    }
+    if (!outcome.ok) return { ...ens, pos: caught, outcome };
+    tx.append(tenantId, {
+      seq,
+      id: `${tenantId}.${caught.epoch}.${seq}`,
+      at,
+      actor,
+      command,
+      ...(codes.length > 0 ? { codes } : {}),
     });
-    if ("pos" in r && r.pos) adopt(r.pos, r.notice === "diverged");
+    return {
+      ...ens,
+      pos: { ...caught, world: outcome.state, seq },
+      outcome,
+      appended: true,
+    };
+  }
+
+  async function dispatchAs(actor: Actor, command: Command): Promise<Outcome> {
+    const seen = pos;
+    const latencyMs = prefs().latencyMs ?? 0;
+    if (latencyMs > 0) await new Promise((r) => setTimeout(r, latencyMs));
+    let r: Commit;
+    try {
+      r = await transact((tx, realMs) =>
+        commit(tx, realMs, seen, actor, command),
+      );
+    } catch {
+      // The storage refused (quota, a blocked origin, a lock error). Nothing
+      // was appended that the next read would not fold; read everything again.
+      resync().catch(() => undefined);
+      return UNAVAILABLE("storage");
+    }
+    const before = pos;
+    if (r.pos) adopt(r.pos, r.notice === "diverged");
     adoptMeta(r.meta);
     setNotice(r.notice);
-    if ("posted" in r && r.posted)
+    if (r.appended)
       channel.post({
         kind: "log",
         tenant: tenantId,
         epoch: pos.epoch,
         seq: pos.seq,
       });
-    if (!("pos" in r)) channel.post({ kind: "meta" });
+    if (r.changed) announce();
+    if (pos.session !== before.session || pos.epoch !== before.epoch) runLoad();
     notify();
     return r.outcome;
   }
@@ -658,48 +775,25 @@ export function createSession(o: SessionOptions): Session {
       await updateMeta((m) => ({ ...m, prefs: { ...m.prefs, ...p } }));
     },
     async setScenario(scenario) {
-      const realMs = realNow();
-      const r = await store.transact((tx) => {
-        const ens = ensureMeta(tx, realMs);
-        const e: TenantMeta = {
-          ...ens.meta.tenants[tenantId]!,
-          scenario,
-          seedHash: seedHash(tenantId, scenario),
-        };
-        const m = {
-          ...ens.meta,
-          tenants: { ...ens.meta.tenants, [tenantId]: e },
-        };
-        tx.writeMeta(m);
-        return { meta: m, head: tx.startEpoch(tenantId) };
-      });
-      adopt(seeded(tenantId, scenario, r.head.epoch), true);
+      const r = await transact((tx, realMs) =>
+        startOver(tx, ensureMeta(tx, realMs).meta, scenario, realMs),
+      );
+      adopt(seeded(tenantId, scenario, r.meta.id, r.head.epoch), true);
       adoptMeta(r.meta);
-      channel.post({
-        kind: "log",
-        tenant: tenantId,
-        epoch: r.head.epoch,
-        seq: 0,
-      });
+      announce();
       runLoad();
       notify();
     },
     async reset() {
-      const realMs = realNow();
-      const r = await store.transact((tx) => {
+      const r = await transact((tx, realMs) => {
         tx.clear();
         const ens = ensureMeta(tx, realMs);
         return { meta: ens.meta, head: tx.head(tenantId) };
       });
-      adopt(seeded(tenantId, "evening", r.head.epoch), true);
+      adopt(seeded(tenantId, "evening", r.meta.id, r.head.epoch), true);
       adoptMeta(r.meta);
-      channel.post({
-        kind: "log",
-        tenant: tenantId,
-        epoch: r.head.epoch,
-        seq: 0,
-      });
-      channel.post({ kind: "meta" });
+      // A new session id: every tab of every tenant starts over when it reads it.
+      announce();
       runLoad();
       notify();
     },

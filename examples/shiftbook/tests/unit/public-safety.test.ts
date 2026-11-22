@@ -24,7 +24,7 @@ function files(dir: string): string[] {
 
 const deny = denyList();
 
-describe("public safety: the example's own strings (H17)", () => {
+describe("public safety: the example's own strings", () => {
   it("every file of the example is safe to publish", () => {
     const problems = files(ROOT).flatMap((p) =>
       safetyProblems(relative(ROOT, p), readFileSync(p, "utf8"), deny),

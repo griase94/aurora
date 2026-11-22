@@ -1,5 +1,5 @@
 /**
- * Import selectors. Filled by the import lane (F.11).
+ * Import selectors. Filled when the import area is built.
  */
 import type { IssueSource } from "./issues.ts";
 

@@ -1,6 +1,6 @@
 /**
- * Device selectors: the kiosks' clocks and deliveries (rule 11). Filled by the
- * kiosk lane (F.7).
+ * Device selectors: the kiosks' clocks and deliveries (rule 11). Filled when the
+ * kiosk area is built.
  */
 import type { IssueSource } from "./issues.ts";
 

@@ -5,6 +5,7 @@ import type {
   Command,
   LocationId,
   PersonId,
+  TenantId,
   WorldState,
 } from "../../src/lib/domain/types.ts";
 import { createPrng } from "../../src/lib/world/prng.ts";
@@ -18,11 +19,14 @@ import {
 } from "../../src/lib/session/session.ts";
 import {
   createBrowserStore,
+  createMemoryLock,
   createMemoryStore,
+  createStore,
   EXPIRY_MS,
   KEYS,
   LOG_CAP,
   MemoryStorage,
+  type LockRunner,
   type SessionStore,
 } from "../../src/lib/session/store.ts";
 import { createVisibilitySwitch } from "../../src/lib/session/visibility.ts";
@@ -40,7 +44,10 @@ function origin(o: { storage?: MemoryStorage; store?: SessionStore } = {}) {
   const time = { ms: START_MS };
   let codes = 0;
   const tab = (
-    extra: { visibility?: ReturnType<typeof createVisibilitySwitch> } = {},
+    extra: {
+      visibility?: ReturnType<typeof createVisibilitySwitch>;
+      tenantId?: TenantId;
+    } = {},
   ) =>
     createSession({
       tenantId: "kranich",
@@ -52,6 +59,28 @@ function origin(o: { storage?: MemoryStorage; store?: SessionStore } = {}) {
     });
   return { storage, store, bus, time, tab };
 }
+
+/** The instants of the tenant's stored log, in log order. */
+function storedInstants(storage: MemoryStorage, tenant: TenantId = "kranich") {
+  const head = JSON.parse(storage.getItem(KEYS.head(tenant)) ?? "null") as {
+    epoch: number;
+    seq: number;
+  } | null;
+  const out: string[] = [];
+  for (let q = 1; head && q <= head.seq; q++) {
+    const raw = storage.getItem(KEYS.log(tenant, head.epoch, q));
+    if (raw) out.push((JSON.parse(raw) as { at: string }).at);
+  }
+  return out;
+}
+
+const neverBackwards = (ats: readonly string[]) =>
+  ats.every((a, i) => i === 0 || a >= ats[i - 1]!);
+
+/** Empties the storage, as "Clear site data" or an eviction does. */
+const wipe = (storage: MemoryStorage) => {
+  for (const [k] of storage.entries()) storage.removeItem(k);
+};
 
 const sessions: Session[] = [];
 afterEach(() => {
@@ -169,7 +198,7 @@ describe("session: the commit", () => {
   });
 });
 
-describe("session: two tabs, one log (H3)", () => {
+describe("session: two tabs, one log", () => {
   it("two sessions on one store commit at once and end with the same world hash and the same stored log", async () => {
     const { tab, storage } = origin();
     const a = await restored(tab());
@@ -189,44 +218,6 @@ describe("session: two tabs, one log (H3)", () => {
     // A third tab that restores from storage folds the same world.
     const c = await restored(tab());
     expect(hashOf(c.world)).toBe(hashOf(a.world));
-  });
-
-  it("fifty interleaved random commands leave every tab with the same world, and a fresh tab agrees", async () => {
-    const { tab, storage, time } = origin();
-    const tabs = [
-      await restored(tab()),
-      await restored(tab()),
-      await restored(tab()),
-    ];
-    const prng = createPrng("session-property");
-    const people = badges();
-    const pending: Promise<unknown>[] = [];
-    for (let i = 0; i < 50; i++) {
-      const s = tabs[prng.int(0, tabs.length - 1)]!;
-      const roll = prng.int(0, 9);
-      const command: Command =
-        roll === 0
-          ? stamp("sb_unknownunknownunknownunkn")
-          : roll === 1
-            ? { type: "tip.remove", id: "tip_x" as never, reason: "test" }
-            : stamp(people[prng.int(0, Math.min(5, people.length - 1))]!.code);
-      pending.push(s.dispatchAs(KIOSK, command));
-      // Some commits run together, some a minute apart.
-      if (prng.int(0, 2) === 0) {
-        await Promise.all(pending.splice(0));
-        time.ms += MINUTE;
-      }
-    }
-    await Promise.all(pending);
-    await settle();
-    const hashes = tabs.map((s) => hashOf(s.world));
-    expect(new Set(hashes).size).toBe(1);
-    expect(tabs.every((s) => s.notice === null)).toBe(true);
-    const seqs = storedLog(storage).map(([k]) => Number(k.split(".").pop()));
-    expect(seqs.sort((x, y) => x - y)).toEqual(seqs.map((_, i) => i + 1));
-    expect(seqs.length).toBeGreaterThan(5);
-    const fresh = await restored(tab());
-    expect(hashOf(fresh.world)).toBe(hashes[0]);
   });
 
   it("a dropped channel message is healed by the next commit", async () => {
@@ -313,7 +304,7 @@ describe("session: two tabs, one log (H3)", () => {
   });
 });
 
-describe("session: the simulated network (H27)", () => {
+describe("session: the simulated network", () => {
   it("failNextSave resolves `unavailable` once, writes nothing, and the second try succeeds", async () => {
     const { tab, storage } = origin();
     const s = await restored(tab());
@@ -390,7 +381,7 @@ describe("session: the simulated network (H27)", () => {
   });
 });
 
-describe("session: restore (H1, H2, H4, H21)", () => {
+describe("session: restore, expiry, repair and the cap", () => {
   it("restore folds the stored log over the seed: a new tab sees what an earlier one committed", async () => {
     const { tab } = origin();
     const a = await restored(tab());
@@ -472,8 +463,8 @@ describe("session: restore (H1, H2, H4, H21)", () => {
       const out = await s.dispatchAs(KIOSK, stamp(code));
       if (!out.ok)
         throw new Error(`commit ${i + 1} refused: ${JSON.stringify(out)}`);
-      // Scenario time moves; real time stays within the 12 hours of a session.
-      s.clock.advance(1);
+      // Scenario time moves past the repeat window; real time stays within the 12 hours of a session.
+      s.clock.advance(2);
     }
     const out = await s.dispatchAs(KIOSK, stamp(code));
     expect(out).toEqual({
@@ -487,7 +478,7 @@ describe("session: restore (H1, H2, H4, H21)", () => {
   }, 60_000);
 });
 
-describe("session: single-tab mode without the lock (H25)", () => {
+describe("session: single-tab mode without the lock", () => {
   it("runs every transaction directly, does not listen to the channel, and still commits", async () => {
     const storage = new MemoryStorage();
     const store = createBrowserStore({ storage, locks: undefined });
@@ -615,4 +606,474 @@ describe("session: identifiers", () => {
     expect(s.persona).toMatchObject({ kind: "person" });
     expect(s.actor).toMatchObject({ role: "owner" });
   });
+});
+
+describe("session: a commit is never applied to a world the tab did not show", () => {
+  it("rule 1 through the session: a double tap two seconds apart across a minute boundary is a duplicate_scan", async () => {
+    const o = origin();
+    const s = await restored(o.tab());
+    const code = badges()[0]!.code;
+    o.time.ms += 59_000;
+    expect((await s.dispatchAs(KIOSK, stamp(code))).ok).toBe(true);
+    o.time.ms += 2_000;
+    expect(await s.dispatchAs(KIOSK, stamp(code))).toMatchObject({
+      ok: false,
+      refusal: { code: "duplicate_scan" },
+    });
+  });
+
+  it("a dataset switch in another tab during the latency wait refuses the commit as `unavailable`", async () => {
+    const o = origin();
+    const a = await restored(o.tab());
+    const b = await restored(o.tab());
+    await a.setPrefs({ latencyMs: 20 });
+    await settle();
+    const pending = a.dispatchAs(KIOSK, stamp(badges()[0]!.code));
+    await b.setScenario("busy");
+    expect(await pending).toEqual({
+      ok: false,
+      refusal: { code: "unavailable", detail: { reason: "world changed" } },
+    });
+    expect(a.scenario).toBe("busy");
+    expect(storedInstants(o.storage)).toEqual([]);
+  });
+
+  it("a kiosk left running past the expiry refuses the next scan and shows the fresh world first", async () => {
+    const o = origin();
+    const a = await restored(o.tab());
+    const code = badges()[0]!.code;
+    await a.dispatchAs(KIOSK, stamp(code));
+    o.time.ms += 13 * 60 * MINUTE;
+    // The person means "out"; the world they stamped in has expired.
+    expect(await a.dispatchAs(KIOSK, stamp(code))).toEqual({
+      ok: false,
+      refusal: { code: "unavailable", detail: { reason: "world changed" } },
+    });
+    expect(a.notice).toBe("expired");
+    expect(a.world).toBe(seedWorld("kranich", "evening"));
+    // The next scan, on the world the screen now shows, is accepted.
+    expect(await a.dispatchAs(KIOSK, stamp(code))).toMatchObject({
+      ok: true,
+      result: { kind: "in" },
+    });
+  });
+
+  it("a command type named like an object's own property resolves a refusal and writes nothing", async () => {
+    const o = origin();
+    const s = await restored(o.tab());
+    for (const type of ["constructor", "hasOwnProperty.x"])
+      expect(await s.dispatchAs(KIOSK, { type } as unknown as Command)).toEqual(
+        {
+          ok: false,
+          refusal: { code: "invalid", detail: { reason: "unknown command" } },
+        },
+      );
+    expect(storedLog(o.storage)).toEqual([]);
+  });
+
+  it("a command that makes apply throw resolves `invalid` and writes nothing", async () => {
+    const o = origin();
+    const s = await restored(o.tab());
+    const hostile = {
+      get type(): string {
+        throw new Error("boom");
+      },
+    } as unknown as Command;
+    expect(await s.dispatchAs(KIOSK, hostile)).toEqual({
+      ok: false,
+      refusal: { code: "invalid", detail: { reason: "threw" } },
+    });
+    expect(storedLog(o.storage)).toEqual([]);
+  });
+});
+
+describe("session: storage that fails or vanishes", () => {
+  it("a storage write that throws (quota, a blocked origin) resolves `unavailable` and the tab recovers", async () => {
+    const storage = new MemoryStorage();
+    let fail = false;
+    class Flaky extends MemoryStorage {
+      override setItem(k: string, v: string) {
+        if (fail) throw new Error("QuotaExceededError");
+        storage.setItem(k, v);
+      }
+      override getItem = (k: string) => storage.getItem(k);
+      override removeItem = (k: string) => storage.removeItem(k);
+      override key = (i: number) => storage.key(i);
+      override get length() {
+        return storage.length;
+      }
+    }
+    const flaky = new Flaky();
+    const o = origin({ storage, store: createMemoryStore(flaky) });
+    const s = await restored(o.tab());
+    fail = true;
+    expect(await s.dispatchAs(KIOSK, stamp(badges()[0]!.code))).toEqual({
+      ok: false,
+      refusal: { code: "unavailable", detail: { reason: "storage" } },
+    });
+    fail = false;
+    await settle();
+    expect((await s.dispatchAs(KIOSK, stamp(badges()[0]!.code))).ok).toBe(true);
+  });
+
+  it("after the storage is wiped under an open tab, its next commit resolves `unavailable` and the one after succeeds", async () => {
+    const o = origin();
+    const a = await restored(o.tab());
+    for (const c of badges().slice(0, 3))
+      await a.dispatchAs(KIOSK, stamp(c.code));
+    wipe(o.storage);
+    expect(await a.dispatchAs(KIOSK, stamp(badges()[4]!.code))).toEqual({
+      ok: false,
+      refusal: { code: "unavailable", detail: { reason: "world changed" } },
+    });
+    expect(a.world).toBe(seedWorld("kranich", "evening"));
+    expect((await a.dispatchAs(KIOSK, stamp(badges()[4]!.code))).ok).toBe(true);
+    const fresh = await restored(o.tab());
+    expect(hashOf(fresh.world)).toBe(hashOf(a.world));
+  });
+
+  it("after a wipe a new tab's log is never folded onto the old tab's own prefix", async () => {
+    const o = origin();
+    const a = await restored(o.tab());
+    const people = badges();
+    for (const c of people.slice(0, 2))
+      await a.dispatchAs(KIOSK, stamp(c.code));
+    await settle();
+    wipe(o.storage);
+    const b = await restored(o.tab());
+    for (const c of people.slice(2, 5))
+      await b.dispatchAs(KIOSK, stamp(c.code));
+    await settle();
+    expect(hashOf(a.world)).toBe(hashOf(b.world));
+  });
+
+  it("a tab that restores past the expiry tells the open tabs, which start over too", async () => {
+    const o = origin();
+    const a = await restored(o.tab());
+    await a.dispatchAs(KIOSK, stamp(badges()[0]!.code));
+    o.time.ms += EXPIRY_MS + MINUTE;
+    const b = await restored(o.tab());
+    await settle();
+    expect(b.notice).toBe("expired");
+    expect(hashOf(a.world)).toBe(hashOf(b.world));
+  });
+});
+
+describe("session: two tenants on one origin", () => {
+  it("a reset in one tenant's tab starts the other tenant's open tab over too", async () => {
+    const o = origin();
+    const k = await restored(o.tab());
+    const h = await restored(o.tab({ tenantId: "hafenbar" }));
+    await h.setScenario("busy");
+    await settle();
+    await k.reset();
+    await settle();
+    const fresh = await restored(o.tab({ tenantId: "hafenbar" }));
+    expect(h.scenario).toBe("evening");
+    expect(fresh.scenario).toBe("evening");
+    expect(hashOf(h.world)).toBe(hashOf(fresh.world));
+  });
+
+  it("a dataset switch in one tenant leaves the other tenant's clock where it was", async () => {
+    const o = origin();
+    const k = await restored(o.tab());
+    const h = await restored(o.tab({ tenantId: "hafenbar" }));
+    o.time.ms += 30 * MINUTE;
+    const before = h.clock.now().getTime();
+    await k.setScenario("dst-autumn");
+    await settle();
+    expect(h.clock.now().getTime()).toBe(before);
+  });
+});
+
+describe("clock: shared between tabs without lost updates", () => {
+  it("two tabs advance while a message is in flight: both advances count and the log never runs backwards", async () => {
+    const o = origin();
+    const a = await restored(o.tab());
+    const b = await restored(o.tab());
+    o.bus.mode = "hold";
+    a.clock.advance(30);
+    await settle();
+    await a.dispatchAs(KIOSK, stamp(badges()[0]!.code));
+    // B has not heard of A's advance.
+    b.clock.advance(15);
+    await settle();
+    await a.dispatchAs(KIOSK, stamp(badges()[1]!.code));
+    o.bus.flush();
+    await settle();
+    expect(JSON.parse(o.storage.getItem(KEYS.meta)!).clock.offsetMinutes).toBe(
+      45,
+    );
+    expect(storedInstants(o.storage)).toEqual([
+      "2026-11-20T18:12:00Z",
+      "2026-11-20T18:27:00Z",
+    ]);
+    expect(a.clock.instant).toBe("2026-11-20T18:27:00Z");
+    expect(b.clock.instant).toBe("2026-11-20T18:27:00Z");
+  });
+
+  it("freeze and resume in a tab with a stale clock keep the other tab's advance", async () => {
+    const o = origin();
+    const a = await restored(o.tab());
+    const b = await restored(o.tab());
+    o.bus.mode = "hold";
+    a.clock.advance(60);
+    await settle();
+    b.clock.freeze();
+    await settle();
+    expect(b.clock.instant).toBe("2026-11-20T18:42:00Z");
+    o.time.ms += 5 * MINUTE;
+    b.clock.resume();
+    await settle();
+    o.bus.flush();
+    await settle();
+    expect(a.clock.instant).toBe("2026-11-20T18:42:00Z");
+    expect(b.clock.instant).toBe("2026-11-20T18:42:00Z");
+  });
+
+  it("a lock granted out of order still reads the clock inside it, so a later grant never gets an earlier instant", async () => {
+    // A lock may grant in any order; it only promises one holder at a time.
+    const storage = new MemoryStorage();
+    const inner = createMemoryLock();
+    let gate: (() => void) | null = null;
+    let holdNext = false;
+    const lock: LockRunner = <T>(fn: () => T) => {
+      if (!holdNext) return inner(fn);
+      holdNext = false;
+      return new Promise<void>((r) => (gate = r)).then(() => inner(fn));
+    };
+    const o = origin({ storage, store: createStore(storage, lock) });
+    const a = await restored(o.tab());
+    const b = await restored(o.tab());
+    holdNext = true;
+    o.time.ms = START_MS + 59_000;
+    const pending = a.dispatchAs(KIOSK, stamp(badges()[0]!.code));
+    o.time.ms = START_MS + 61_000;
+    await b.dispatchAs(KIOSK, stamp(badges()[1]!.code));
+    gate!();
+    await pending;
+    expect(storedInstants(storage)).toEqual([
+      "2026-11-20T17:43:00Z",
+      "2026-11-20T17:43:00Z",
+    ]);
+  });
+
+  it("a dataset switch begins at the dataset's own instant, after real time passed and the clock was advanced, in every tab", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const o = origin();
+    const a = await restored(o.tab());
+    const b = await restored(o.tab());
+    o.time.ms += 30 * MINUTE + 17_000;
+    await vi.advanceTimersByTimeAsync(30 * MINUTE + 17_000);
+    a.clock.advance(120);
+    await settle();
+    await a.setScenario("dst-autumn");
+    await settle();
+    expect(a.clock.instant).toBe("2026-10-25T00:52:00Z");
+    expect(b.clock.instant).toBe("2026-10-25T00:52:00Z");
+    const first = await a.dispatchAs(KIOSK, stamp(badges(a.world)[0]!.code));
+    expect(first.ok && first.result).toMatchObject({
+      at: "2026-10-25T00:52:00Z",
+    });
+    // Live time runs on from there.
+    o.time.ms += 8 * MINUTE;
+    await vi.advanceTimersByTimeAsync(8 * MINUTE);
+    expect(b.clock.instant).toBe("2026-10-25T01:00:00Z");
+  });
+});
+
+/**
+ * A lock that grants its waiting callers in a drawn order, one at a time. The
+ * Web Locks API promises one holder, not the order in which tabs asked.
+ */
+function shufflingLock(draw: (n: number) => number): LockRunner {
+  const waiting: (() => void)[] = [];
+  let busy = false;
+  const next = () => {
+    if (busy || waiting.length === 0) return;
+    busy = true;
+    const [run] = waiting.splice(draw(waiting.length), 1);
+    run!();
+  };
+  return <T>(fn: () => T) =>
+    new Promise<T>((resolve, reject) => {
+      waiting.push(() => {
+        try {
+          resolve(fn());
+        } catch (e) {
+          reject(e);
+        } finally {
+          busy = false;
+          queueMicrotask(next);
+        }
+      });
+      queueMicrotask(next);
+    });
+}
+
+/** One replayable run of random operations over two tenants' tabs; returns what broke. */
+async function propertyRun(
+  seed: string,
+): Promise<{ ops: string[]; problems: string[]; accepted: number }> {
+  const prng = createPrng(seed);
+  const lockDraw = createPrng(`${seed}:lock`);
+  const storage = new MemoryStorage();
+  const store = createStore(
+    storage,
+    shufflingLock((n) => lockDraw.int(0, n - 1)),
+  );
+  const o = origin({ storage, store });
+  const tenants: TenantId[] = [
+    "kranich",
+    "kranich",
+    "kranich",
+    "hafenbar",
+    "hafenbar",
+  ];
+  const pages = tenants.map(() => createVisibilitySwitch(true));
+  const tabs: Session[] = [];
+  for (const [i, tenantId] of tenants.entries())
+    tabs.push(await restored(o.tab({ tenantId, visibility: pages[i]! })));
+  const branchOf = (s: Session) =>
+    Object.keys(s.world.locations).sort()[0] as LocationId;
+  const ops: string[] = [];
+  let accepted = 0;
+  const pending: Promise<unknown>[] = [];
+  const drain = async () => {
+    let done = false;
+    const all = Promise.all(pending.splice(0)).then(() => (done = true));
+    for (let i = 0; i < 200 && !done; i++)
+      await vi.advanceTimersByTimeAsync(10);
+    await all;
+    await settle();
+  };
+
+  for (let i = 0; i < 60; i++) {
+    const t = prng.int(0, tabs.length - 1);
+    const s = tabs[t]!;
+    const roll = prng.int(0, 29);
+    if (roll < 14) {
+      const codes = badges(s.world).slice(0, 6);
+      const code = codes.length ? prng.pick(codes).code : "sb_none";
+      const locationId = branchOf(s);
+      pending.push(
+        s
+          .dispatchAs(
+            { kind: "kiosk", locationId },
+            { type: "stamp", code, locationId },
+          )
+          .then((out) => {
+            if (out.ok) accepted++;
+          }),
+      );
+      ops.push(`${t}:stamp`);
+    } else if (roll === 14) {
+      const scenario = prng.pick([
+        "evening",
+        "busy",
+        "empty",
+        "review",
+        "dst-autumn",
+      ] as const);
+      pending.push(s.setScenario(scenario));
+      ops.push(`${t}:scenario ${scenario}`);
+    } else if (roll === 15 && prng.int(0, 2) === 0) {
+      pending.push(s.reset());
+      ops.push(`${t}:reset`);
+    } else if (roll === 16) {
+      o.bus.mode = prng.pick(["deliver", "hold", "drop"] as const);
+      ops.push(`bus ${o.bus.mode}`);
+    } else if (roll === 17) {
+      o.bus.flush();
+      ops.push("flush");
+    } else if (roll === 18) {
+      pages[t]!.set(!pages[t]!.visible());
+      ops.push(`${t}:visible ${pages[t]!.visible()}`);
+    } else if (roll === 19) {
+      const n = prng.int(1, 45);
+      s.clock.advance(n);
+      ops.push(`${t}:advance ${n}`);
+    } else if (roll === 20) {
+      s.clock.freeze();
+      ops.push(`${t}:freeze`);
+    } else if (roll === 21) {
+      s.clock.resume();
+      ops.push(`${t}:resume`);
+    } else if (roll === 22) {
+      const ms = prng.int(1, 90) * 1000;
+      o.time.ms += ms;
+      ops.push(`tick ${ms / 1000}s`);
+    } else if (roll === 23) {
+      const latencyMs = prng.pick([0, 0, 30]);
+      pending.push(s.setPrefs({ latencyMs }));
+      ops.push(`${t}:latency ${latencyMs}`);
+    } else if (roll === 24) {
+      pending.push(s.setPrefs({ failNextSave: true }));
+      ops.push(`${t}:failNextSave`);
+    } else {
+      await drain();
+      ops.push("await");
+    }
+  }
+  await drain();
+
+  // Heal: messages flow again and every page hides and shows once.
+  o.bus.mode = "deliver";
+  o.bus.flush();
+  await settle();
+  for (const page of pages) {
+    page.set(false);
+    page.set(true);
+  }
+  await drain();
+  for (const s of tabs) await s.setPrefs({ latencyMs: 0 });
+  await drain();
+
+  const problems: string[] = [];
+  for (const tenantId of ["kranich", "hafenbar"] as const) {
+    const fresh = await restored(o.tab({ tenantId }));
+    for (const [i, s] of tabs.entries()) {
+      if (s.tenantId !== tenantId) continue;
+      if (hashOf(s.world) !== hashOf(fresh.world))
+        problems.push(
+          `tab ${i} (${tenantId}) holds another world than a fresh tab`,
+        );
+      if (s.clock.instant !== fresh.clock.instant)
+        problems.push(
+          `tab ${i} shows ${s.clock.instant}, a fresh tab ${fresh.clock.instant}`,
+        );
+    }
+    if (!neverBackwards(storedInstants(storage, tenantId)))
+      problems.push(`${tenantId}: the stored instants run backwards`);
+  }
+  for (const [i, s] of tabs.entries())
+    if (s.notice === "diverged") problems.push(`tab ${i} diverged`);
+  return { ops, problems, accepted };
+}
+
+describe("session: the property, over many replayable seeds", () => {
+  it("after any interleaving of commits, dataset switches, resets, lost messages, clock changes and lock orders, every tab agrees with a fresh tab", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    // SESSION_PROPERTY_SEED replays one failing seed; SESSION_PROPERTY_RUNS widens the search.
+    const only = process.env.SESSION_PROPERTY_SEED;
+    const runs = Number(process.env.SESSION_PROPERTY_RUNS ?? 24);
+    const seeds = only
+      ? [only]
+      : Array.from({ length: runs }, (_, k) => `session-${k}`);
+    const failures: string[] = [];
+    let accepted = 0;
+    for (const seed of seeds) {
+      const run = await propertyRun(seed);
+      const { ops, problems } = run;
+      accepted += run.accepted;
+      for (const s of sessions.splice(0)) s.destroy();
+      if (problems.length > 0)
+        failures.push(
+          `seed ${seed}: ${problems.join("; ")}\n  ops: ${ops.join(", ")}`,
+        );
+    }
+    expect(failures).toEqual([]);
+    // The runs commit for real, not only refuse.
+    expect(accepted).toBeGreaterThan(seeds.length * 3);
+  }, 120_000);
 });

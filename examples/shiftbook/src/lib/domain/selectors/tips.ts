@@ -1,5 +1,5 @@
 /**
- * Tip selectors. Filled by the tips lane (F.4).
+ * Tip selectors. Filled when the tips area is built.
  */
 import type { MinorUnits, PeriodId, WorldState } from "../types.ts";
 

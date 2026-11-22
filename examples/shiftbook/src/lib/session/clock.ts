@@ -1,11 +1,18 @@
 /**
  * The scenario clock: the only reads of real time in the app.
  *
- * Live: `now = start + offsetMinutes + (realNow − startedAtMs)`, the same in
- * every tab because the three inputs are shared through the stored meta.
- * Frozen: `now = start + offsetMinutes`; time moves only by `advance`.
- * Until the session restores, the clock stands at the dataset's instant, so
- * the server's HTML and the first client render agree.
+ * The session counts minutes: live, `offsetMinutes + (realNow − startedAtMs)`;
+ * frozen, `offsetMinutes` alone, so time moves only by `advance`. A tenant's
+ * clock is its dataset's instant plus the session minutes since the dataset
+ * began (`baseMinutes`), so a dataset switch starts at the dataset's own
+ * instant. All inputs are shared through the stored meta, so every tab of a
+ * tenant shows the same time. Until the session restores, the clock stands at
+ * the dataset's instant, so the server's HTML and the first client render
+ * agree.
+ *
+ * A change (advance, freeze, resume) is relative: the session applies it to
+ * the stored state inside the lock, so a tab that has not heard of another
+ * tab's change never overwrites it.
  */
 import { instantMs, toMinuteInstant } from "../domain/time.ts";
 import type { Instant } from "../domain/types.ts";
@@ -30,7 +37,12 @@ export interface Clock {
 /** What the session uses beyond the public interface. */
 export interface SessionClock extends Clock {
   /** Adopts the stored state: after restore, and when another tab changed it. */
-  configure(o: { start: Instant; clock: ClockMeta; startedAtMs: number }): void;
+  configure(o: {
+    start: Instant;
+    clock: ClockMeta;
+    startedAtMs: number;
+    baseMinutes?: number;
+  }): void;
   /** The minute tick stops while the page is hidden. */
   setVisible(visible: boolean): void;
   /** Stops the tick for good. */
@@ -43,15 +55,14 @@ export function scenarioMs(
   clock: ClockMeta,
   startedAtMs: number,
   realMs: number,
+  baseMinutes = 0,
 ): number {
-  const base = instantMs(start) + clock.offsetMinutes * MINUTE;
-  return clock.mode === "live"
-    ? base + Math.max(0, realMs - startedAtMs)
-    : base;
+  const at = instantMs(start) + (clock.offsetMinutes - baseMinutes) * MINUTE;
+  return clock.mode === "live" ? at + Math.max(0, realMs - startedAtMs) : at;
 }
 
-/** Whole minutes since the start, as a stored clock state counts them. */
-function elapsedMinutes(
+/** Whole session minutes at a real time, as a stored clock state counts them. Never decreases. */
+export function sessionMinutes(
   clock: ClockMeta,
   startedAtMs: number,
   realMs: number,
@@ -64,23 +75,54 @@ function elapsedMinutes(
   );
 }
 
+/** A change of the stored clock, applied to whatever is stored when the lock is held. */
+export type ClockChange = (
+  clock: ClockMeta,
+  startedAtMs: number,
+  realMs: number,
+) => ClockMeta;
+
+export const advanced =
+  (minutes: number): ClockChange =>
+  (c) => ({ ...c, offsetMinutes: c.offsetMinutes + minutes });
+
+export const frozen: ClockChange = (c, startedAtMs, realMs) =>
+  c.mode === "frozen"
+    ? c
+    : { mode: "frozen", offsetMinutes: sessionMinutes(c, startedAtMs, realMs) };
+
+export const resumed: ClockChange = (c, startedAtMs, realMs) =>
+  c.mode === "live"
+    ? c
+    : {
+        mode: "live",
+        offsetMinutes:
+          c.offsetMinutes -
+          Math.floor(Math.max(0, realMs - startedAtMs) / MINUTE),
+      };
+
 export function createClock(o: {
   start: Instant;
   /** Real time in milliseconds; the default reads the device. */
   nowMs?: () => number;
-  /** Called with the new state when this tab changes the clock, so the session can store it. */
-  onChange?: (clock: ClockMeta) => void;
+  /**
+   * Called with the change when this tab changes the clock, so the session
+   * applies it to the stored state and configures the clock with the result.
+   */
+  onChange?: (change: ClockChange) => void;
 }): SessionClock {
   const realNow = o.nowMs ?? (() => Date.now());
   let start = o.start;
   let state: ClockMeta = { mode: "frozen", offsetMinutes: 0 };
   let startedAtMs = 0;
+  let baseMinutes = 0;
   let visible = true;
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const listeners = new Set<() => void>();
 
-  const nowMs = () => scenarioMs(start, state, startedAtMs, realNow());
+  const nowMs = () =>
+    scenarioMs(start, state, startedAtMs, realNow(), baseMinutes);
   let instant = toMinuteInstant(nowMs());
 
   const refresh = () => {
@@ -106,9 +148,10 @@ export function createClock(o: {
     );
   };
 
-  const change = (next: ClockMeta) => {
-    state = next;
-    o.onChange?.(next);
+  /** Shows the change in this tab at once; the stored result follows through `configure`. */
+  const change = (c: ClockChange) => {
+    state = c(state, startedAtMs, realNow());
+    o.onChange?.(c);
     refresh();
     for (const fn of listeners) fn();
     schedule();
@@ -125,20 +168,12 @@ export function createClock(o: {
     advance(minutes) {
       if (!(minutes > 0) || !Number.isInteger(minutes))
         throw new RangeError("the clock moves forward by whole minutes only");
-      change({ ...state, offsetMinutes: state.offsetMinutes + minutes });
+      change(advanced(minutes));
     },
-    freeze() {
-      if (state.mode === "frozen") return;
-      change({
-        mode: "frozen",
-        offsetMinutes: elapsedMinutes(state, startedAtMs, realNow()),
-      });
-    },
-    resume() {
-      if (state.mode === "live") return;
-      const passed = Math.floor(Math.max(0, realNow() - startedAtMs) / MINUTE);
-      change({ mode: "live", offsetMinutes: state.offsetMinutes - passed });
-    },
+    // No early return on this tab's own mode: it may not have heard of
+    // another tab's change yet, and both changes are idempotent.
+    freeze: () => change(frozen),
+    resume: () => change(resumed),
     subscribe(fn) {
       listeners.add(fn);
       return () => listeners.delete(fn);
@@ -148,6 +183,7 @@ export function createClock(o: {
       start = c.start;
       state = { ...c.clock };
       startedAtMs = c.startedAtMs;
+      baseMinutes = c.baseMinutes ?? 0;
       const before = instant;
       refresh();
       if (modeChanged && before === instant) for (const fn of listeners) fn();

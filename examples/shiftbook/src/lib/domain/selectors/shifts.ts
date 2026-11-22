@@ -1,6 +1,6 @@
 /**
  * Shift selectors: open shifts and who is at work (rule 3), and the issues of
- * this area. `conflictIssues` is filled by the shifts lane (F.3).
+ * this area. `conflictIssues` is filled when corrections are built.
  */
 import { periodRecordOfShift } from "../periods.ts";
 import { minutesBetween } from "../time.ts";
