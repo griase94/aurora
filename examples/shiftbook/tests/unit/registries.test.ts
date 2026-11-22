@@ -153,15 +153,59 @@ describe("registries: the domain and the world stay pure", () => {
     ["const id = crypto.randomUUID();", "draws randomness (crypto)"],
     ["const d = globalThis.document;", "touches the DOM"],
     ["const n = globalThis.navigator.language;", "touches the DOM"],
+    [
+      'import { now, today, getLocalTimeZone } from "@internationalized/date";',
+      "reads the real time or the device zone (now, today, getLocalTimeZone from @internationalized/date)",
+    ],
+    [
+      'import { today } from "@internationalized/date";',
+      "reads the real time or the device zone (now, today, getLocalTimeZone from @internationalized/date)",
+    ],
+    ["const t = new Date;", "reads the real time (new Date)"],
+    [
+      "const z = Intl.DateTimeFormat().resolvedOptions().timeZone;",
+      "reads the device zone (Intl or toLocale* without an explicit timeZone)",
+    ],
+    [
+      'const s = new Intl.DateTimeFormat("de-DE").format(d);',
+      "reads the device zone (Intl or toLocale* without an explicit timeZone)",
+    ],
+    [
+      'const s = d.toLocaleTimeString("de-DE");',
+      "reads the device zone (Intl or toLocale* without an explicit timeZone)",
+    ],
+    [
+      "const h = new Date(ms).getHours();",
+      "reads the device zone (a local-zone Date getter)",
+    ],
+    [
+      "const o = d.getTimezoneOffset();",
+      "reads the device zone (a local-zone Date getter)",
+    ],
+    [
+      "const s = d.getDate();",
+      "reads the device zone (a local-zone Date getter)",
+    ],
+    [
+      "const s = d.toString();",
+      "reads the device zone (a local-zone Date getter)",
+    ],
+    ["const D = Date;\nnew D();", "passes Date on as a value"],
+    ["const t = Reflect.construct(Date, []);", "passes Date on as a value"],
+    ["const z = process.env.TZ;", "reads the environment (process.env)"],
+    [
+      "setTimeout(tick, 1000);",
+      "schedules on the real clock (setTimeout and friends)",
+    ],
   ])("the guard catches %s", (source, problem) => {
     expect(
       purityProblems(new Map([["src/lib/world/seed/people.ts", source]])),
     ).toEqual([`src/lib/world/seed/people.ts ${problem}`]);
   });
 
-  it("pure uses of Date stay allowed: a given instant, Date.UTC and Date.parse", () => {
+  it("pure uses of Date stay allowed: a given instant, Date.UTC, Date.parse, UTC getters and a zone named outright", () => {
     const ok =
-      "const a = new Date(ms);\nconst b = Date.UTC(2026, 0, 1);\nconst c = Date.parse(i);\nfunction f(d: Date): Date { return d; }";
+      'const a = new Date(ms);\nconst b = Date.UTC(2026, 0, 1);\nconst c = Date.parse(i);\nfunction f(d: Date, e: Map<string, Date>): Date { return d; }\nconst h = a.getUTCHours() + a.getUTCDate();\nconst x = h.toString(16);\nconst s = new Intl.DateTimeFormat("en-CA", { timeZone: zone }).format(a);\nconst t = a.toLocaleString("de-DE", { timeZone: zone });\nimport { parseAbsolute, toZoned } from "@internationalized/date";';
     expect(purityProblems(new Map([["src/lib/domain/time.ts", ok]]))).toEqual(
       [],
     );

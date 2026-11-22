@@ -142,6 +142,46 @@ export function registryProblems(files: ReadonlyMap<string, string>): string[] {
   return out;
 }
 
+const CLOCK_IMPORTS = new Set(["now", "today", "getLocalTimeZone"]);
+
+/** Imports `now`, `today` or `getLocalTimeZone` from `@internationalized/date`, or names the device zone at all. */
+function readsClockThroughDateLibrary(source: string): boolean {
+  if (/\bgetLocalTimeZone\b/.test(source)) return true;
+  for (const m of source.matchAll(
+    /import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*["']@internationalized\/date["']/g,
+  ))
+    for (const part of m[1]!.split(",")) {
+      const name = part
+        .trim()
+        .replace(/^type\s+/, "")
+        .split(/\s+as\s+/)[0];
+      if (name && CLOCK_IMPORTS.has(name)) return true;
+    }
+  return false;
+}
+
+/** The text of the call's arguments, from just after `(` at `open` to its matching `)`. */
+function argumentsAt(source: string, open: number): string {
+  let depth = 0;
+  for (let i = open; i < source.length; i++) {
+    if (source[i] === "(") depth++;
+    else if (source[i] === ")" && --depth === 0)
+      return source.slice(open + 1, i);
+  }
+  return source.slice(open + 1);
+}
+
+/** `Intl.DateTimeFormat(...)` or `toLocale*String(...)` whose arguments name no `timeZone`, or the zone read back from Intl. */
+function formatsInDeviceZone(source: string): boolean {
+  if (/resolvedOptions\s*\(\s*\)\s*\.\s*timeZone\b/.test(source)) return true;
+  for (const m of source.matchAll(
+    /\bIntl\s*\.\s*DateTimeFormat\s*\(|\.toLocale(?:Date|Time)?String\s*\(/g,
+  ))
+    if (!/\btimeZone\b/.test(argumentsAt(source, m.index + m[0].length - 1)))
+      return true;
+  return false;
+}
+
 /**
  * The domain and the world are pure: no Svelte, no DOM, no session, no real
  * time and no randomness. The session is the only way in and out.
@@ -151,6 +191,7 @@ export function purityProblems(files: ReadonlyMap<string, string>): string[] {
   const forbidden: [RegExp, string][] = [
     [/\bDate\.now\s*\(/, "reads the real time (Date.now)"],
     [/\bnew Date\s*\(\s*\)/, "reads the real time (new Date())"],
+    [/\bnew\s+Date\b(?!\s*\()/, "reads the real time (new Date)"],
     // `Date()` without `new` returns the current time as a string.
     [/(?<![\w$.])(?<!new\s+)Date\s*\(/, "reads the real time (Date())"],
     [/\bperformance\.now\s*\(/, "reads the real time (performance.now)"],
@@ -161,12 +202,33 @@ export function purityProblems(files: ReadonlyMap<string, string>): string[] {
       "draws randomness (crypto)",
     ],
     [
+      /\.(?:get(?:FullYear|Year|Month|Date|Day|Hours|Minutes|Seconds|Milliseconds|TimezoneOffset)|to(?:Date|Time)?String)\s*\(\s*\)/,
+      "reads the device zone (a local-zone Date getter)",
+    ],
+    // `const D = Date` or `Reflect.construct(Date, [])` hides a real-time read from the patterns above.
+    [/(?:[=(,]|\breturn)\s*Date\s*(?=[;,)\]]|$)/m, "passes Date on as a value"],
+    [/\bprocess\s*\.\s*env\b/, "reads the environment (process.env)"],
+    [
+      /\b(?:setTimeout|setInterval|setImmediate|queueMicrotask|requestAnimationFrame)\s*\(/,
+      "schedules on the real clock (setTimeout and friends)",
+    ],
+    [
       /\b(?:document|window|navigator|localStorage|sessionStorage)\b(?:\.|\s*\[)/,
       "touches the DOM",
     ],
     [
       /\bglobalThis\s*\.\s*(?:document|window|navigator|localStorage|sessionStorage)\b/,
       "touches the DOM",
+    ],
+  ];
+  const checks: [(source: string) => boolean, string][] = [
+    [
+      readsClockThroughDateLibrary,
+      "reads the real time or the device zone (now, today, getLocalTimeZone from @internationalized/date)",
+    ],
+    [
+      formatsInDeviceZone,
+      "reads the device zone (Intl or toLocale* without an explicit timeZone)",
     ],
   ];
   for (const [path, source] of files) {
@@ -189,6 +251,8 @@ export function purityProblems(files: ReadonlyMap<string, string>): string[] {
     const problems = new Set<string>();
     for (const [re, what] of forbidden)
       if (re.test(source)) problems.add(`${path} ${what}`);
+    for (const [test, what] of checks)
+      if (test(source)) problems.add(`${path} ${what}`);
     out.push(...problems);
   }
   return out;

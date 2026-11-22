@@ -169,14 +169,14 @@ the result.
 fiction by construction (mail at `example.com`, phone numbers from the film-and-television ranges, accounts on a
 bank code no bank holds).
 
-| Rule                                                                                               | Proven by                                                  |
-| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| The same bytes on every run, checked by a hash                                                     | `seed.test.ts › seed: determinism`                         |
-| The scripted cases of the evening exist                                                            | `seed.test.ts › seed: the scripted cases of the evening`   |
-| Every dataset is a consistent world                                                                | `seed.test.ts › seed: every dataset is a consistent world` |
-| Seeding stays within its budget                                                                    | `seed.test.ts › seed: budgets`                             |
-| No string of the example or of its generated data is unsafe to publish                             | `public-safety.test.ts`                                    |
-| The domain and the world import no Svelte and no session, read no real time and draw no randomness | `registries.test.ts › the domain and the world stay pure`  |
+| Rule                                                                                                                                                    | Proven by                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| The same bytes on every run, checked by a hash                                                                                                          | `seed.test.ts › seed: determinism`                         |
+| The scripted cases of the evening exist                                                                                                                 | `seed.test.ts › seed: the scripted cases of the evening`   |
+| Every dataset is a consistent world                                                                                                                     | `seed.test.ts › seed: every dataset is a consistent world` |
+| Seeding stays within its budget                                                                                                                         | `seed.test.ts › seed: budgets`                             |
+| No string of the example or of its generated data is unsafe to publish                                                                                  | `public-safety.test.ts`                                    |
+| The domain and the world import no Svelte and no session, read no real time, no device zone and no environment, schedule nothing and draw no randomness | `registries.test.ts › the domain and the world stay pure`  |
 
 ## The session and its storage format
 
