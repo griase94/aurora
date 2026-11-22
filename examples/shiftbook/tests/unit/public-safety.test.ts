@@ -60,6 +60,21 @@ describe("public safety: each rule fails on its inversion", () => {
       `DE89${"37040044"}0532013000`,
       /fiction bank code/,
     ],
+    [
+      "a national phone number outside the fiction ranges",
+      `call 030 ${"1234567"}`,
+      /phone number/,
+    ],
+    [
+      "a postcode outside the fiction list in a data field",
+      `${"postcode"}: "${"10999"}"`,
+      /postcode/,
+    ],
+    [
+      "a postcode outside the fiction list in generated data",
+      `{"city":"Berlin","${"postcode"}":"${"10115"}"}`,
+      /postcode/,
+    ],
     ["a link to an unknown host", `https:${"//"}tracker.invalid/x`, /link to/],
     ["a local path", ["", "Users", "someone", "x"].join("/"), /local path/],
     ["a token", `ghp${"_"}${"a".repeat(30)}`, /GitHub token/],
@@ -72,11 +87,14 @@ describe("public safety: each rule fails on its inversion", () => {
     expect(out[0]).toMatch(problem);
   });
 
-  it("fiction passes: example.com, the film-and-television ranges, the fiction bank code, reference links", () => {
+  it("fiction passes: example.com, the film-and-television ranges in both formats, the fiction postcodes, the fiction bank code, reference links", () => {
     const text = [
       `lena.k${at}example.com`,
       "+49 30 23125 017",
       "+49 40 66969 500",
+      "030 23125 017",
+      'postcode: "10000"',
+      '{"postcode":"20999"}',
       `DE${"02"}${"00010000"}0000000042`,
       `https:${"//"}developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API`,
     ].join("\n");

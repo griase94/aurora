@@ -43,18 +43,18 @@ describe("seed: determinism", () => {
       ),
     );
     expect(hashes).toEqual({
-      "hafenbar:busy": "93ca3ace",
-      "hafenbar:dst-autumn": "727dec81",
-      "hafenbar:dst-spring": "609139e4",
-      "hafenbar:empty": "a88967d1",
-      "hafenbar:evening": "a9f050c1",
-      "hafenbar:review": "37ee7e47",
-      "kranich:busy": "2745f705",
-      "kranich:dst-autumn": "20957bf5",
-      "kranich:dst-spring": "b795595d",
-      "kranich:empty": "54ae53ec",
-      "kranich:evening": "b2266be8",
-      "kranich:review": "7e2cec04",
+      "hafenbar:busy": "77f53599",
+      "hafenbar:dst-autumn": "b838b1a2",
+      "hafenbar:dst-spring": "f12fdd99",
+      "hafenbar:empty": "f756d0f8",
+      "hafenbar:evening": "93f04598",
+      "hafenbar:review": "16c86374",
+      "kranich:busy": "65e4a5a4",
+      "kranich:dst-autumn": "c32d790a",
+      "kranich:dst-spring": "38cc932a",
+      "kranich:empty": "5692e094",
+      "kranich:evening": "b622535d",
+      "kranich:review": "7eaee605",
     });
   });
 

@@ -64,7 +64,7 @@ const kranich: TenantFacts = {
       timeZone: "Europe/Berlin",
       address: {
         street: "Kranichmarkt 4",
-        postcode: "10999",
+        postcode: "10000",
         city: "Berlin",
         country: "DE",
       },
@@ -75,7 +75,7 @@ const kranich: TenantFacts = {
       timeZone: "Europe/Berlin",
       address: {
         street: "Reiherweg 17",
-        postcode: "10999",
+        postcode: "10000",
         city: "Berlin",
         country: "DE",
       },

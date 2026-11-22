@@ -1,7 +1,7 @@
 /**
  * The seed's `people` part: the roster of the dataset, each person with a
  * complete personnel record and a badge. Contact data is fiction by
- * construction (H17): mail addresses at `example.com`, phone numbers from the
+ * construction: mail addresses at `example.com`, phone numbers from the
  * ranges reserved for film and television, IBANs with valid check digits on
  * the bank code 000 100 00, which no bank holds.
  */
@@ -52,13 +52,14 @@ export function fictionIban(account: number): string {
   return `DE${String(98 - rest).padStart(2, "0")}${bban}`;
 }
 
+/** Invented street names; with the fiction postcodes no address is real. */
 const STREETS = [
-  "Lindenhof",
-  "Am Wasserturm",
-  "Mühlengasse",
-  "Kastanienallee",
-  "Fliederweg",
-  "Hafenstieg",
+  "Wolkengasse",
+  "Am Nebelturm",
+  "Kranichhof",
+  "Möwenstieg",
+  "Lerchenpfad",
+  "Reiherbogen",
 ];
 const INSURERS = ["Gesundkasse Nord (fictional)", "Kasse am Fluss (fictional)"];
 
