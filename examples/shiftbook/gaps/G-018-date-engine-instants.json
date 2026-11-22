@@ -1,0 +1,11 @@
+{
+  "id": "G-018",
+  "title": "No instants or clock changes in the date engine: the domain's time runs on @internationalized/date",
+  "kit": "The kit's date engine has calendar dates and wall times, but no instant type, no zone-aware arithmetic across a clock change and no way to resolve a wall time in a gap or an overlap.",
+  "workaround": "src/lib/domain/time.ts implements the instant, zone and clock-change functions on @internationalized/date behind the interface the domain needs; its tests stay when the implementation moves onto the kit.",
+  "where": ["src/lib/domain/time.ts"],
+  "kitLane": "B4.1",
+  "swapLane": "F.9",
+  "issue": null,
+  "since": "F.1b"
+}
