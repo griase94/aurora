@@ -509,7 +509,11 @@ export function createSession(o: SessionOptions): Session {
 
   /** Re-reads the store after another tab's message or when the page shows again. */
   function syncFromStore() {
-    if (destroyed || !restored || stale) return;
+    if (destroyed || stale) return;
+    if (!restored) {
+      background(restore);
+      return;
+    }
     try {
       const read = store.readMeta();
       if (read.kind !== "ok" || realNow() - read.meta.startedAtMs > EXPIRY_MS) {
@@ -611,8 +615,25 @@ export function createSession(o: SessionOptions): Session {
     reload: () => runLoad(),
   };
 
+  /** Listens to the channel and the page's visibility, once; from the first restore, even one that failed. */
+  let listening = false;
+  function listen() {
+    if (listening || destroyed) return;
+    listening = true;
+    if (store.synced) unsubscribe.push(channel.subscribe(syncFromStore));
+    unsubscribe.push(
+      visibility.subscribe((visible) => {
+        if (restored) clock.setVisible(visible);
+        if (visible) syncFromStore();
+      }),
+    );
+  }
+
   async function restore() {
-    if (stale) return;
+    if (stale || destroyed) return;
+    // A restore that fails (the storage refused) is retried by the next
+    // message or the next time the page shows.
+    listen();
     let r;
     try {
       r = await transact((tx, realMs) => {
@@ -639,16 +660,7 @@ export function createSession(o: SessionOptions): Session {
     if (r.changed) announce();
     if (folded) adopt(folded, true);
     else await resync();
-    if (firstTime) {
-      if (store.synced) unsubscribe.push(channel.subscribe(syncFromStore));
-      clock.setVisible(visibility.visible());
-      unsubscribe.push(
-        visibility.subscribe((visible) => {
-          clock.setVisible(visible);
-          if (visible) syncFromStore();
-        }),
-      );
-    }
+    if (firstTime) clock.setVisible(visibility.visible());
     runLoad();
     notify();
   }

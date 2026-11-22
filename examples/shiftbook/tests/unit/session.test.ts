@@ -1169,6 +1169,60 @@ function shufflingLock(draw: (n: number) => number): LockRunner {
     });
 }
 
+/** A storage whose next `failures` writes throw, as a full quota does. */
+class FlakyStorage extends MemoryStorage {
+  failures = 0;
+  constructor(readonly inner: MemoryStorage) {
+    super();
+  }
+  override setItem(k: string, v: string) {
+    if (this.failures > 0) {
+      this.failures--;
+      throw new Error("QuotaExceededError");
+    }
+    this.inner.setItem(k, v);
+  }
+  override getItem = (k: string) => this.inner.getItem(k);
+  override removeItem = (k: string) => this.inner.removeItem(k);
+  override key = (i: number) => this.inner.key(i);
+  override get length() {
+    return this.inner.length;
+  }
+}
+
+/** Records every append that succeeded, by tenant, session id and epoch, as stored JSON. */
+function recordingStore(inner: SessionStore) {
+  const appends = new Map<string, string[]>();
+  const keyOf = (tenant: TenantId, session: string, epoch: number) =>
+    `${tenant}|${session}|${epoch}`;
+  const store: SessionStore = {
+    synced: inner.synced,
+    readMeta: () => inner.readMeta(),
+    readHead: (t) => inner.readHead(t),
+    readLog: (t, e, a) => inner.readLog(t, e, a),
+    transact: (fn) =>
+      inner.transact((tx) =>
+        fn({
+          ...tx,
+          append(tenant, envelope) {
+            tx.append(tenant, envelope);
+            const read = tx.meta();
+            const k = keyOf(
+              tenant,
+              read.kind === "ok" ? read.meta.id : "?",
+              tx.head(tenant).epoch,
+            );
+            appends.set(k, [
+              ...(appends.get(k) ?? []),
+              JSON.stringify(envelope),
+            ]);
+          },
+        }),
+      ),
+  };
+  return { store, appends, keyOf };
+}
+
 /** One replayable run of random operations over two tenants' tabs; returns what broke. */
 async function propertyRun(
   seed: string,
@@ -1176,10 +1230,14 @@ async function propertyRun(
   const prng = createPrng(seed);
   const lockDraw = createPrng(`${seed}:lock`);
   const storage = new MemoryStorage();
-  const store = createStore(
-    storage,
-    shufflingLock((n) => lockDraw.int(0, n - 1)),
+  const flaky = new FlakyStorage(storage);
+  const recorded = recordingStore(
+    createStore(
+      flaky,
+      shufflingLock((n) => lockDraw.int(0, n - 1)),
+    ),
   );
+  const store = recorded.store;
   const o = origin({ storage, store });
   const tenants: TenantId[] = [
     "kranich",
@@ -1196,7 +1254,11 @@ async function propertyRun(
     Object.keys(s.world.locations).sort()[0] as LocationId;
   const ops: string[] = [];
   let accepted = 0;
+  let stamps = 0;
   const pending: Promise<unknown>[] = [];
+  const problems: string[] = [];
+  /** A setter or a restore may reject while the storage throws; a dispatch never does. */
+  const quietly = (p: Promise<unknown>) => p.catch(() => undefined);
   const drain = async () => {
     let done = false;
     const all = Promise.all(pending.splice(0)).then(() => (done = true));
@@ -1206,11 +1268,13 @@ async function propertyRun(
     await settle();
   };
 
-  for (let i = 0; i < 60; i++) {
+  // At least fifty commands a run, and the rarer operations between them.
+  for (let i = 0; stamps < 50 || i < 110; i++) {
     const t = prng.int(0, tabs.length - 1);
     const s = tabs[t]!;
-    const roll = prng.int(0, 29);
+    const roll = prng.int(0, 35);
     if (roll < 14) {
+      stamps++;
       const codes = badges(s.world).slice(0, 6);
       const code = codes.length ? prng.pick(codes).code : "sb_none";
       const locationId = branchOf(s);
@@ -1220,9 +1284,12 @@ async function propertyRun(
             { kind: "kiosk", locationId },
             { type: "stamp", code, locationId },
           )
-          .then((out) => {
-            if (out.ok) accepted++;
-          }),
+          .then(
+            (out) => {
+              if (out.ok) accepted++;
+            },
+            (e: unknown) => problems.push(`a dispatch rejected: ${String(e)}`),
+          ),
       );
       ops.push(`${t}:stamp`);
     } else if (roll === 14) {
@@ -1233,10 +1300,10 @@ async function propertyRun(
         "review",
         "dst-autumn",
       ] as const);
-      pending.push(s.setScenario(scenario));
+      pending.push(quietly(s.setScenario(scenario)));
       ops.push(`${t}:scenario ${scenario}`);
     } else if (roll === 15 && prng.int(0, 2) === 0) {
-      pending.push(s.reset());
+      pending.push(quietly(s.reset()));
       ops.push(`${t}:reset`);
     } else if (roll === 16) {
       o.bus.mode = prng.pick(["deliver", "hold", "drop"] as const);
@@ -1263,17 +1330,60 @@ async function propertyRun(
       ops.push(`tick ${ms / 1000}s`);
     } else if (roll === 23) {
       const latencyMs = prng.pick([0, 0, 30]);
-      pending.push(s.setPrefs({ latencyMs }));
+      pending.push(quietly(s.setPrefs({ latencyMs })));
       ops.push(`${t}:latency ${latencyMs}`);
     } else if (roll === 24) {
-      pending.push(s.setPrefs({ failNextSave: true }));
+      pending.push(quietly(s.setPrefs({ failNextSave: true })));
       ops.push(`${t}:failNextSave`);
+    } else if (roll === 25 && prng.int(0, 3) === 0) {
+      // Past the expiry: every tab's next read starts the session over.
+      o.time.ms += EXPIRY_MS + prng.int(1, 120) * MINUTE;
+      ops.push("tick past 12 h");
+    } else if (roll === 26 && prng.int(0, 2) === 0) {
+      wipe(storage);
+      ops.push("wipe");
+    } else if (roll === 27) {
+      flaky.failures = prng.int(1, 3);
+      ops.push(`storage throws ${flaky.failures}`);
+    } else if (roll === 28 && tabs.length < 8) {
+      const tenantId = prng.pick(["kranich", "hafenbar"] as const);
+      const page = createVisibilitySwitch(true);
+      const fresh = o.tab({ tenantId, visibility: page });
+      sessions.push(fresh);
+      pages.push(page);
+      tabs.push(fresh);
+      pending.push(quietly(fresh.restore()));
+      ops.push(`new tab ${tabs.length - 1} (${tenantId})`);
+    } else if (roll === 29 && tabs.length > 2) {
+      s.destroy();
+      tabs.splice(t, 1);
+      pages.splice(t, 1);
+      ops.push(`${t}:destroy`);
+    } else if (roll === 30) {
+      const locationId = branchOf(s);
+      const owner = Object.values(s.world.people).find(
+        (p) => p.role === "owner",
+      );
+      const persona =
+        prng.int(0, 1) === 0 || !owner
+          ? ({ kind: "kiosk", locationId } as const)
+          : ({ kind: "person", personId: owner.id } as const);
+      pending.push(quietly(s.setPersona(persona)));
+      ops.push(`${t}:persona ${persona.kind}`);
+    } else if (roll === 31) {
+      const language = prng.pick(["de", "en"] as const);
+      pending.push(quietly(s.setLanguage(language)));
+      ops.push(`${t}:language ${language}`);
+    } else if (roll === 32) {
+      pending.push(quietly(s.setPrefs({ failNextLoad: true })));
+      ops.push(`${t}:failNextLoad`);
     } else {
       await drain();
       ops.push("await");
     }
   }
   await drain();
+  flaky.failures = 0;
 
   // Heal: messages flow again and every page hides and shows once.
   o.bus.mode = "deliver";
@@ -1287,7 +1397,6 @@ async function propertyRun(
   for (const s of tabs) await s.setPrefs({ latencyMs: 0 });
   await drain();
 
-  const problems: string[] = [];
   for (const tenantId of ["kranich", "hafenbar"] as const) {
     const fresh = await restored(o.tab({ tenantId }));
     for (const [i, s] of tabs.entries()) {
@@ -1303,7 +1412,45 @@ async function propertyRun(
     }
     if (!neverBackwards(storedInstants(storage, tenantId)))
       problems.push(`${tenantId}: the stored instants run backwards`);
+
+    // No lost update: what was accepted in the final log is what is stored.
+    const read = store.readMeta();
+    const head = store.readHead(tenantId);
+    const written =
+      recorded.appends.get(
+        recorded.keyOf(
+          tenantId,
+          read.kind === "ok" ? read.meta.id : "?",
+          head.epoch,
+        ),
+      ) ?? [];
+    if (written.length !== head.seq)
+      problems.push(
+        `${tenantId}: ${written.length} accepted commits in the final log, head ${head.seq}`,
+      );
+    const stored = [];
+    for (let q = 1; q <= head.seq; q++)
+      stored.push(storage.getItem(KEYS.log(tenantId, head.epoch, q)));
+    if (JSON.stringify(stored) !== JSON.stringify(written))
+      problems.push(`${tenantId}: the stored log is not what was accepted`);
+    const envelopeIds = stored.map(
+      (raw) => (JSON.parse(raw ?? "{}") as { id?: string }).id,
+    );
+    if (new Set(envelopeIds).size !== envelopeIds.length)
+      problems.push(`${tenantId}: two envelopes share an id`);
+    const minted = fresh.world.audit.map((e) => e.id);
+    if (new Set(minted).size !== minted.length)
+      problems.push(`${tenantId}: two audit events share an id`);
+    const shiftIds = Object.values(fresh.world.shifts).map((x) => x.id);
+    if (new Set(shiftIds).size !== shiftIds.length)
+      problems.push(`${tenantId}: two shifts share an id`);
   }
+  const appended = [...recorded.appends.values()].reduce(
+    (n, list) => n + list.length,
+    0,
+  );
+  if (appended !== accepted)
+    problems.push(`${accepted} accepted outcomes, ${appended} appends`);
   for (const [i, s] of tabs.entries())
     if (s.notice === "diverged") problems.push(`tab ${i} diverged`);
   return { ops, problems, accepted };
