@@ -237,6 +237,43 @@ function parseHead(raw: string | null): Head {
   return { epoch: 0, seq: 0 };
 }
 
+/**
+ * What `readLog` hands back for an entry it cannot read (not JSON, not an
+ * envelope's shape). Its `seq` follows no head, so every fold of it fails and
+ * the reader takes the path of an envelope that no longer applies: the tenant
+ * starts over with the notice `diverged`.
+ */
+export function unreadableEnvelope(): Envelope {
+  return {
+    seq: 0,
+    id: "",
+    at: "",
+    actor: { kind: "system" },
+    command: { type: "unreadable" } as unknown as Command,
+  };
+}
+
+/** An envelope as stored, or `null` when the entry is not one. */
+function parseEnvelope(raw: string): Envelope | null {
+  let v: unknown;
+  try {
+    v = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (
+    !isObject(v) ||
+    !Number.isInteger(v.seq) ||
+    typeof v.at !== "string" ||
+    !isObject(v.actor) ||
+    !isObject(v.command) ||
+    (v.codes !== undefined &&
+      !(Array.isArray(v.codes) && v.codes.every((c) => typeof c === "string")))
+  )
+    return null;
+  return v as unknown as Envelope;
+}
+
 function keysWithPrefix(kv: KeyValue, prefix: string): string[] {
   const keys: string[] = [];
   for (let i = 0; i < kv.length; i++) {
@@ -252,15 +289,24 @@ function reader(kv: KeyValue) {
   return {
     readMeta: () => parseMeta(kv.getItem(KEYS.meta)),
     readHead,
-    /** The envelopes after `afterSeq` up to the head, in order; nothing when the epoch has moved on. */
+    /**
+     * The envelopes after `afterSeq` up to the head, in order; nothing when the
+     * epoch has moved on. An entry that is missing or not an envelope ends the read with
+     * `unreadableEnvelope()`, which no fold accepts.
+     */
     readLog(tenant: TenantId, epoch: number, afterSeq: number): Envelope[] {
       const head = readHead(tenant);
       if (head.epoch !== epoch) return [];
       const out: Envelope[] = [];
       for (let seq = afterSeq + 1; seq <= head.seq; seq++) {
         const raw = kv.getItem(KEYS.log(tenant, epoch, seq));
-        if (raw === null) break;
-        out.push(JSON.parse(raw) as Envelope);
+        // A missing entry under the head is as unreadable as a corrupt one.
+        const envelope = raw === null ? null : parseEnvelope(raw);
+        if (!envelope) {
+          out.push(unreadableEnvelope());
+          break;
+        }
+        out.push(envelope);
       }
       return out;
     },

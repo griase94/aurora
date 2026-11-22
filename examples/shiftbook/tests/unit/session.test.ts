@@ -455,6 +455,66 @@ describe("session: restore, expiry, repair and the cap", () => {
     expect(storedLog(o.storage)).toEqual([]);
   });
 
+  it.each([
+    ["invalid JSON", "{not json"],
+    ["JSON null", "null"],
+    ["an object without a command", '{"seq":1,"at":"2026-11-20T17:42:00Z"}'],
+    ["missing", null],
+  ])(
+    "an envelope under the head that is %s starts the tenant over with the notice diverged, on restore, on catch-up and on commit",
+    async (_what, raw) => {
+      const o = origin();
+      const a = await restored(o.tab());
+      const open = await restored(o.tab());
+      await a.dispatchAs(KIOSK, stamp(badges()[0]!.code));
+      o.bus.mode = "hold";
+      await a.dispatchAs(KIOSK, stamp(badges()[1]!.code));
+      // The second envelope is corrupt before the open tab hears of it.
+      if (raw === null) o.storage.removeItem(KEYS.log("kranich", 0, 2));
+      else o.storage.setItem(KEYS.log("kranich", 0, 2), raw);
+
+      const b = await restored(o.tab());
+      expect(b.restored).toBe(true);
+      expect(b.notice).toBe("diverged");
+      expect(b.world).toBe(seedWorld("kranich", "evening"));
+      expect(storedLog(o.storage)).toEqual([]);
+      expect((await b.dispatchAs(KIOSK, stamp(badges()[0]!.code))).ok).toBe(
+        true,
+      );
+
+      o.bus.mode = "deliver";
+      o.bus.flush();
+      await settle();
+      expect(hashOf(open.world)).toBe(hashOf(b.world));
+      expect((await a.dispatchAs(KIOSK, stamp(badges()[2]!.code))).ok).toBe(
+        true,
+      );
+    },
+  );
+
+  it.each([
+    ["invalid JSON", "{not json"],
+    ["JSON null", "null"],
+  ])(
+    "a commit that finds %s under the head starts the tenant over with the notice diverged",
+    async (_what, raw) => {
+      const o = origin();
+      const a = await restored(o.tab());
+      const c = await restored(o.tab());
+      o.bus.mode = "drop";
+      await c.dispatchAs(KIOSK, stamp(badges()[0]!.code));
+      o.storage.setItem(KEYS.log("kranich", 0, 1), raw);
+      expect(await a.dispatchAs(KIOSK, stamp(badges()[1]!.code))).toEqual({
+        ok: false,
+        refusal: { code: "unavailable", detail: { reason: "diverged" } },
+      });
+      expect(a.notice).toBe("diverged");
+      expect((await a.dispatchAs(KIOSK, stamp(badges()[1]!.code))).ok).toBe(
+        true,
+      );
+    },
+  );
+
   it(`at the cap of ${LOG_CAP} envelopes a commit is refused with \`unavailable\``, async () => {
     const o = origin();
     const s = await restored(o.tab());
