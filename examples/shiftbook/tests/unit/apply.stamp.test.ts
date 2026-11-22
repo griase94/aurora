@@ -362,15 +362,23 @@ describe("apply: the dispatcher", () => {
       });
   });
 
-  it("refuses a command type it does not know, also one named like an object's own property", () => {
+  it("refuses a command type it does not know, also one named like an object's own property or a known family's unknown member", () => {
     for (const type of [
       "nonsense.do",
+      "stamp.evil",
+      "person.bogus",
+      "person",
+      "stamp.",
       "constructor",
       "hasOwnProperty.x",
       "__proto__.x",
       "toString",
     ]) {
-      const o = apply(world, { type } as unknown as Command, ctx(NOW));
+      const o = apply(
+        world,
+        { type, code: codeOf("10"), locationId: MARKT } as unknown as Command,
+        ctx(NOW),
+      );
       expect(o, type).toEqual({
         ok: false,
         refusal: { code: "invalid", detail: { reason: "unknown command" } },

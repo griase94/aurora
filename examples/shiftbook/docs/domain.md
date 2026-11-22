@@ -13,12 +13,12 @@ a heading with one line; the lane that builds it writes its block and edits no o
 `apply` looks up the command's family in a handler table that names every family from the first day. A family
 that is not built yet refuses every command with `invalid` and `detail.reason: "not built"`.
 
-| Rule                                                                                                   | Proven by                                                       |
-| ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
-| `apply` is pure: the same state, command and context give the same outcome, and the input is untouched | `apply.stamp.test.ts › apply: the dispatcher › is pure…`        |
-| Every family but `stamp` is a stub that refuses with `invalid`, reason "not built"                     | `apply.stamp.test.ts › every family but stamp is a stub…`       |
-| An unknown command type is refused, also one named like a property every object has ("constructor")    | `apply.stamp.test.ts › refuses a command type it does not know` |
-| Every command family has its handler file and only `apply.ts` lists them                               | `registries.test.ts`                                            |
+| Rule                                                                                                                                                                                  | Proven by                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `apply` is pure: the same state, command and context give the same outcome, and the input is untouched                                                                                | `apply.stamp.test.ts › apply: the dispatcher › is pure…`        |
+| Every family but `stamp` is a stub that refuses with `invalid`, reason "not built"                                                                                                    | `apply.stamp.test.ts › every family but stamp is a stub…`       |
+| A command type outside the closed list `COMMAND_TYPES` is refused, also a known family's unknown member ("stamp.evil") and one named like a property every object has ("constructor") | `apply.stamp.test.ts › refuses a command type it does not know` |
+| Every command family has its handler file and only `apply.ts` lists them                                                                                                              | `registries.test.ts`                                            |
 
 ## Permissions
 

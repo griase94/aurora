@@ -423,6 +423,34 @@ export type Command =
 
 export type CommandType = Command["type"];
 
+/**
+ * Every command type, a closed list: a type outside it is refused even when
+ * its family exists ("stamp.evil"), because replayed commands come from storage.
+ */
+export const COMMAND_TYPES = {
+  stamp: true,
+  "person.create": true,
+  "person.update": true,
+  "person.setStatus": true,
+  "token.issue": true,
+  "token.lock": true,
+  "token.replace": true,
+  "shift.correct": true,
+  "shift.add": true,
+  "conflict.resolve": true,
+  "device.report": true,
+  "tip.add": true,
+  "tip.change": true,
+  "tip.remove": true,
+  "import.commit": true,
+  "period.requestConfirmations": true,
+  "period.close": true,
+  "period.reopen": true,
+  "confirmation.confirm": true,
+  "settings.update": true,
+  "roles.update": true,
+} as const satisfies Record<CommandType, true>;
+
 /** A command's family: the part of its type before the dot ("shift.correct" → "shift"). */
 export type FamilyOf<T extends string> = T extends `${infer F}.${string}`
   ? F

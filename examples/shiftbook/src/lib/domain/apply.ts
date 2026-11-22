@@ -20,6 +20,7 @@ import { handle as stamp } from "./handlers/stamp.ts";
 import { handle as tip } from "./handlers/tip.ts";
 import { handle as token } from "./handlers/token.ts";
 import { truncate } from "./time.ts";
+import { COMMAND_TYPES } from "./types.ts";
 import type {
   ApplyContext,
   Command,
@@ -60,14 +61,14 @@ export function apply(
   command: Command,
   ctx: ApplyContext,
 ): Outcome {
-  const family =
-    typeof command.type === "string" ? familyOf(command.type) : undefined;
-  // Commands come back from storage on replay: a type such as "constructor"
-  // must not reach the table's prototype.
-  const handler =
-    family !== undefined && Object.hasOwn(HANDLERS, family)
-      ? (HANDLERS[family] as Handler<Command>)
-      : undefined;
+  // Commands come back from storage on replay: only a listed type reaches a
+  // handler, and a type such as "constructor" never reaches a prototype.
+  const known =
+    typeof command.type === "string" &&
+    Object.hasOwn(COMMAND_TYPES, command.type);
+  const handler = known
+    ? (HANDLERS[familyOf(command.type)] as Handler<Command> | undefined)
+    : undefined;
   if (!handler)
     return {
       ok: false,
