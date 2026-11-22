@@ -106,6 +106,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:fast
+      # The examples keep their own unit lane (Shiftbook's domain, session and guards).
+      - run: pnpm -r --if-present test:unit
 
   pack:
     name: pack
