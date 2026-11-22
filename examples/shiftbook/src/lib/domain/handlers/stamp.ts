@@ -47,6 +47,9 @@ export const handle: Handler<CommandOf<"stamp">> = (state, command, ctx) => {
     });
   if (!state.locations[command.locationId])
     return refuse("not_found", "locationId");
+  // A kiosk stamps at its own branch only.
+  if (ctx.actor.kind === "kiosk" && ctx.actor.locationId !== command.locationId)
+    return refuse("forbidden", "locationId", { reason: "other branch" });
 
   const token = Object.values(state.tokens).find(
     (t) => t.code === command.code,
@@ -56,14 +59,20 @@ export const handle: Handler<CommandOf<"stamp">> = (state, command, ctx) => {
     return refuse("locked_token", "code", { status: token.status });
   const person = state.people[token.personId];
   if (!person) return refuse("unknown_token", "code");
+  // A person stamps with their own badge only, never a colleague's.
+  if (ctx.actor.kind === "person" && ctx.actor.personId !== person.id)
+    return refuse("forbidden", "code", { reason: "other person" });
   if (person.status !== "active")
     return refuse("inactive_person", "code", { status: person.status });
 
+  // Instants are minute-exact (rule 2), so two scans one minute apart may be
+  // only seconds apart in real time. The window therefore reaches one minute
+  // further: with 60 seconds, the same minute and the next are a repeat.
   const now = ctx.now;
   const last = lastStamp(state, person.id);
   if (
     last &&
-    minutesBetween(last.at, now) * 60 < state.settings.scanRepeatSeconds
+    minutesBetween(last.at, now) * 60 < state.settings.scanRepeatSeconds + 60
   )
     return refuse("duplicate_scan", "code", {
       previous: last.kind,

@@ -137,12 +137,70 @@ describe("rule 1, stamp", () => {
         },
       },
     });
+    // Instants are minute-exact, so the next minute may still be seconds later.
     expect(
-      accepted(stamp(first.state, codeOf("10"), "2026-11-20T17:43:00Z")).result,
+      stamp(first.state, codeOf("10"), "2026-11-20T17:43:00Z"),
+    ).toMatchObject({ ok: false, refusal: { code: "duplicate_scan" } });
+    expect(
+      accepted(stamp(first.state, codeOf("10"), "2026-11-20T17:44:00Z")).result,
     ).toMatchObject({
       kind: "out",
-      worked: 1,
+      worked: 2,
     });
+  });
+
+  it("a double scan two seconds apart across a minute boundary is still a duplicate_scan", () => {
+    const first = accepted(stamp(world, codeOf("10"), "2026-11-20T17:42:59Z"));
+    expect(stamp(first.state, codeOf("10"), "2026-11-20T17:43:01Z")).toEqual({
+      ok: false,
+      refusal: {
+        code: "duplicate_scan",
+        field: "code",
+        detail: {
+          previous: "in",
+          at: NOW,
+          shift: (first.result as { shift: string }).shift,
+        },
+      },
+    });
+  });
+
+  it("a kiosk stamps only at its own branch", () => {
+    const o = apply(
+      world,
+      {
+        type: "stamp",
+        code: codeOf("10"),
+        locationId: "loc_kranich_park" as LocationId,
+      },
+      ctx(NOW),
+    );
+    expect(o).toMatchObject({
+      ok: false,
+      refusal: { code: "forbidden", field: "locationId" },
+    });
+  });
+
+  it("a person stamps only their own badge, never a colleague's", () => {
+    const colleague = Object.values(world.people).find(
+      (p) =>
+        p.role === "employee" &&
+        p.status === "active" &&
+        p.id !== "person_kranich_10",
+    )!;
+    const actor: Actor = {
+      kind: "person",
+      personId: colleague.id,
+      role: "employee",
+    };
+    expect(stamp(world, codeOf("10"), NOW, actor)).toMatchObject({
+      ok: false,
+      refusal: { code: "forbidden", field: "code" },
+    });
+    const own = Object.values(world.tokens).find(
+      (t) => t.personId === colleague.id && t.status === "active",
+    )!;
+    expect(stamp(world, own.code, NOW, actor)).toMatchObject({ ok: true });
   });
 
   it("a branch that does not exist is refused at the location field", () => {
@@ -304,15 +362,19 @@ describe("apply: the dispatcher", () => {
       });
   });
 
-  it("refuses a command type it does not know", () => {
-    const o = apply(
-      world,
-      { type: "nonsense.do" } as unknown as Command,
-      ctx(NOW),
-    );
-    expect(o).toEqual({
-      ok: false,
-      refusal: { code: "invalid", detail: { reason: "unknown command" } },
-    });
+  it("refuses a command type it does not know, also one named like an object's own property", () => {
+    for (const type of [
+      "nonsense.do",
+      "constructor",
+      "hasOwnProperty.x",
+      "__proto__.x",
+      "toString",
+    ]) {
+      const o = apply(world, { type } as unknown as Command, ctx(NOW));
+      expect(o, type).toEqual({
+        ok: false,
+        refusal: { code: "invalid", detail: { reason: "unknown command" } },
+      });
+    }
   });
 });

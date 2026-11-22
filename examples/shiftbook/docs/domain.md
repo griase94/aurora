@@ -17,7 +17,7 @@ that is not built yet refuses every command with `invalid` and `detail.reason: "
 | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
 | `apply` is pure: the same state, command and context give the same outcome, and the input is untouched | `apply.stamp.test.ts › apply: the dispatcher › is pure…`        |
 | Every family but `stamp` is a stub that refuses with `invalid`, reason "not built"                     | `apply.stamp.test.ts › every family but stamp is a stub…`       |
-| An unknown command type is refused                                                                     | `apply.stamp.test.ts › refuses a command type it does not know` |
+| An unknown command type is refused, also one named like a property every object has ("constructor")    | `apply.stamp.test.ts › refuses a command type it does not know` |
 | Every command family has its handler file and only `apply.ts` lists them                               | `registries.test.ts`                                            |
 
 ## Permissions
@@ -39,18 +39,21 @@ beyond its role. Every handler asks it; the screens ask it too, to explain why a
 
 A scan at a kiosk. The employee chooses nothing: an open shift ends now, else a shift begins now.
 
-| Rule                                                                                                     | Proven by                                                                            |
-| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| A scan without an open shift begins one now                                                              | `apply.stamp.test.ts › rule 1, stamp › a scan without an open shift begins one now…` |
-| The next valid scan ends it, to the minute                                                               | `apply.stamp.test.ts › the next valid scan ends it…`                                 |
-| An open shift from yesterday ends at the next scan                                                       | `apply.stamp.test.ts › an open shift from yesterday ends…`                           |
-| An unknown code is refused with `unknown_token` and changes nothing                                      | `apply.stamp.test.ts › an unknown code is refused…`                                  |
-| A locked or replaced badge is refused with `locked_token`                                                | `apply.stamp.test.ts › a locked or replaced badge…`                                  |
-| A person who is not active is refused with `inactive_person`                                             | `apply.stamp.test.ts › a person who is not active…`                                  |
-| A second scan within `scanRepeatSeconds` is a `duplicate_scan` with the earlier result and books nothing | `apply.stamp.test.ts › a second scan within scanRepeatSeconds…`                      |
-| A branch that does not exist is refused at the location field                                            | `apply.stamp.test.ts › a branch that does not exist…`                                |
-| Rule 2, minute-exact: an instant is truncated to its minute when it is taken; nothing is rounded         | `apply.stamp.test.ts › rule 2, minute-exact`, `time.test.ts › rule 2, minute-exact`  |
-| Rule 3, open shifts: an open shift turns into a warning at the threshold and is never ended by itself    | `apply.stamp.test.ts › rule 3, open shifts`                                          |
+| Rule                                                                                                                                   | Proven by                                                                            |
+| -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| A scan without an open shift begins one now                                                                                            | `apply.stamp.test.ts › rule 1, stamp › a scan without an open shift begins one now…` |
+| The next valid scan ends it, to the minute                                                                                             | `apply.stamp.test.ts › the next valid scan ends it…`                                 |
+| An open shift from yesterday ends at the next scan                                                                                     | `apply.stamp.test.ts › an open shift from yesterday ends…`                           |
+| An unknown code is refused with `unknown_token` and changes nothing                                                                    | `apply.stamp.test.ts › an unknown code is refused…`                                  |
+| A locked or replaced badge is refused with `locked_token`                                                                              | `apply.stamp.test.ts › a locked or replaced badge…`                                  |
+| A person who is not active is refused with `inactive_person`                                                                           | `apply.stamp.test.ts › a person who is not active…`                                  |
+| A second scan within `scanRepeatSeconds` is a `duplicate_scan` with the earlier result and books nothing                               | `apply.stamp.test.ts › a second scan within scanRepeatSeconds…`                      |
+| Instants are minute-exact, so the window reaches one minute further: two scans seconds apart across a minute boundary are a repeat too | `apply.stamp.test.ts › a double scan two seconds apart across a minute boundary…`    |
+| A branch that does not exist is refused at the location field                                                                          | `apply.stamp.test.ts › a branch that does not exist…`                                |
+| A kiosk stamps only at its own branch; anything else is `forbidden` at the location field                                              | `apply.stamp.test.ts › a kiosk stamps only at its own branch`                        |
+| A person stamps only with their own badge; a colleague's is `forbidden` at the code field                                              | `apply.stamp.test.ts › a person stamps only their own badge…`                        |
+| Rule 2, minute-exact: an instant is truncated to its minute when it is taken; nothing is rounded                                       | `apply.stamp.test.ts › rule 2, minute-exact`, `time.test.ts › rule 2, minute-exact`  |
+| Rule 3, open shifts: an open shift turns into a warning at the threshold and is never ended by itself                                  | `apply.stamp.test.ts › rule 3, open shifts`                                          |
 
 ## person
 

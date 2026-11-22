@@ -60,8 +60,14 @@ export function apply(
   command: Command,
   ctx: ApplyContext,
 ): Outcome {
-  const family = familyOf(command.type);
-  const handler = HANDLERS[family] as Handler<Command> | undefined;
+  const family =
+    typeof command.type === "string" ? familyOf(command.type) : undefined;
+  // Commands come back from storage on replay: a type such as "constructor"
+  // must not reach the table's prototype.
+  const handler =
+    family !== undefined && Object.hasOwn(HANDLERS, family)
+      ? (HANDLERS[family] as Handler<Command>)
+      : undefined;
   if (!handler)
     return {
       ok: false,
