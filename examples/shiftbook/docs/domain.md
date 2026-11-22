@@ -139,11 +139,13 @@ date engine has instants.
 
 Amounts are integer minor units from the field to the export. Sums are integer additions.
 
-| Rule                                                                     | Proven by                                 |
-| ------------------------------------------------------------------------ | ----------------------------------------- |
-| Sums equal the entries for any list of random amounts, and stay integers | `money.test.ts › sums equal the entries…` |
-| A float is refused, so it can never enter a sum                          | `money.test.ts › refuses a float…`        |
-| No screen divides by 100, calls `toFixed` or `parseFloat`                | `kit-only.test.ts`                        |
+| Rule                                                                    | Proven by                                                    |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Sums are exact: 12.50 + 0.99 + 0.01 is 13.50                            | `money.test.ts › sums worked examples exactly…`              |
+| A float, NaN or Infinity is refused, so it can never enter a sum        | `money.test.ts › refuses a float, NaN or Infinity…`          |
+| A sum past the safe integer range is refused at the step that leaves it | `money.test.ts › refuses a sum past the safe integer range…` |
+| A sum of random amounts stays an integer                                | `money.test.ts › stays an integer…`                          |
+| No screen divides by 100, calls `toFixed` or `parseFloat`               | `kit-only.test.ts`                                           |
 
 ## Selectors and issues
 

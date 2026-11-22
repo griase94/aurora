@@ -19,8 +19,10 @@ export function sumMinor(values: Iterable<MinorUnits>): MinorUnits {
   for (const v of values) {
     if (!isMinorUnits(v)) throw new TypeError(`not minor units: ${String(v)}`);
     total += v;
+    // Checked at every step: past the range a later entry could bring an
+    // already rounded total back into it.
+    if (!Number.isSafeInteger(total))
+      throw new RangeError("sum exceeds the safe integer range");
   }
-  if (!Number.isSafeInteger(total))
-    throw new RangeError("sum exceeds the safe integer range");
   return total;
 }
