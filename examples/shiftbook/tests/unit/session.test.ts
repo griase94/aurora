@@ -998,6 +998,21 @@ describe("session: the background paths reject nowhere", () => {
     expect((await a.dispatchAs(KIOSK, stamp(badges()[1]!.code))).ok).toBe(true);
   });
 
+  it("a restore that the storage refused is retried when the page shows again", async () => {
+    const o = origin();
+    const page = createVisibilitySwitch(true);
+    const s = o.tab({ visibility: page });
+    sessions.push(s);
+    const heal = breakWrites(o.storage);
+    await expect(s.restore()).rejects.toThrow("QuotaExceededError");
+    expect(s.restored).toBe(false);
+    heal();
+    page.set(false);
+    page.set(true);
+    await settle();
+    expect(s.restored).toBe(true);
+  });
+
   it("a fold that fails while the storage throws rejects nowhere", async () => {
     const o = origin();
     const a = await restored(o.tab());
