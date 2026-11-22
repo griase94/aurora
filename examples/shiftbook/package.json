@@ -1,0 +1,25 @@
+{
+  "name": "@aurora-examples/shiftbook",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shiftbook, Aurora's proving ground: a fictional time-tracking and tips product built only from Aurora.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "check": "tsc -p tsconfig.json",
+    "test:unit": "vitest run",
+    "gaps": "node scripts/print-gaps.mjs",
+    "ledger:diff": "node scripts/ledger-diff.mjs"
+  },
+  "dependencies": {
+    "@internationalized/date": "3.12.4",
+    "svelte": "5.57.3"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@types/node": "^25.9.0",
+    "typescript": "^6.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^4.1.6"
+  }
+}
